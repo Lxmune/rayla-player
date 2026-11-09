@@ -96,6 +96,8 @@ export function createTestApp(deps: CoreDeps & { setActivity: SetActivity }): Ra
   return createApp(createCore(deps), deps);
 }
 
-const KEY = Symbol('rayla-app');
+/** Context key; component tests pass `context: new Map([[APP_CONTEXT_KEY, app]])`. */
+export const APP_CONTEXT_KEY = Symbol('rayla-app');
+const KEY = APP_CONTEXT_KEY;
 export const provideApp = (app: RaylaApp): RaylaApp => setContext(KEY, app);
 export const getApp = (): RaylaApp => getContext<RaylaApp>(KEY);
