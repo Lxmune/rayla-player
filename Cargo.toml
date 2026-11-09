@@ -1,0 +1,11 @@
+[workspace]
+resolver = "2"
+members = ["crates/dsp", "crates/engine", "src-tauri"]
+
+# The resampler and convolver tests are slow without optimisation.
+[profile.test]
+opt-level = 2
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
