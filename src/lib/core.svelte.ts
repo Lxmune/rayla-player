@@ -1,0 +1,140 @@
+// Composition root: wires sessions, settings, player, downloads and the remote
+// target. `createCore(deps)` takes everything injectable (tests use fakes);
+// `createProductionCore()` binds the real Tauri seams. This is the only place
+// that decides which implementation backs which interface.
+
+import { DownloadsStore, type DownloadsEngine } from './downloads/store.svelte';
+import { FavoritesStore } from './jellyfin/favorites.svelte';
+import { JellyfinRemote, RemoteController } from './jellyfin/remote';
+import { SessionStore, type Secrets } from './jellyfin/session.svelte';
+import { ipc, type Ipc } from './ipc';
+import { PlayerController, type PlayerEngine } from './player/controller.svelte';
+import { EngineErrors, errorMessage } from './player/errors.svelte';
+import { httpFetch, localKv, openSocket, type HttpFetch, type KeyValueStore, type SocketFactory } from './platform';
+import { SettingsStore, type SettingsEngine } from './settings/store.svelte';
+
+export type CoreEngine = PlayerEngine &
+  SettingsEngine &
+  DownloadsEngine &
+  Pick<Ipc, 'engineInitError'>;
+
+export interface CoreDeps {
+  engine: CoreEngine;
+  fetch: HttpFetch;
+  kv: KeyValueStore;
+  openSocket: SocketFactory;
+  secrets: Secrets;
+  deviceName?: string;
+  /** Test seams. */
+  random?: () => number;
+  now?: () => number;
+  generateDeviceId?: () => string;
+  remoteBackoff?: (attempt: number) => number;
+}
+
+export interface Core {
+  sessions: SessionStore;
+  settings: SettingsStore;
+  player: PlayerController;
+  downloads: DownloadsStore;
+  favorites: FavoritesStore;
+  remote: RemoteController;
+  /** Engine failure banner state. */
+  errors: EngineErrors;
+  /**
+   * Startup: engine init error -> `errors`, push settings to the engine,
+   * subscribe to engine events, read downloads and saved sessions, start the
+   * remote target when signed in. Never rejects.
+   */
+  start(): Promise<void>;
+  /** Stops the remote target and unsubscribes from the engine. */
+  dispose(): Promise<void>;
+}
+
+export function createCore(deps: CoreDeps): Core {
+  const errors = new EngineErrors();
+  const settings = new SettingsStore({ kv: deps.kv, engine: deps.engine, errors });
+  const sessions = new SessionStore({
+    kv: deps.kv,
+    secrets: deps.secrets,
+    fetch: deps.fetch,
+    deviceName: deps.deviceName,
+    generateDeviceId: deps.generateDeviceId,
+  });
+  const downloads = new DownloadsStore({
+    engine: deps.engine,
+    client: () => sessions.client,
+    errors,
+  });
+  const player = new PlayerController({
+    engine: deps.engine,
+    client: () => sessions.client,
+    settings,
+    downloads,
+    errors,
+    random: deps.random,
+    now: deps.now,
+  });
+  const favorites = new FavoritesStore(() => sessions.client);
+  const remote = new RemoteController(
+    (client) =>
+      new JellyfinRemote({
+        client,
+        player,
+        volume: () => settings.current.dsp.volume,
+        setVolume: (v) => settings.updateDsp({ volume: v }),
+        shuffled: () => player.shuffle,
+        connect: deps.openSocket,
+        backoff: deps.remoteBackoff,
+      }),
+  );
+
+  // Playback and the remote target belong to the old client: stop both before
+  // the active profile changes, start the remote for the new one afterwards.
+  sessions.beforeActiveChange(async () => {
+    await remote.stop();
+    await player.clear();
+  });
+  let started = false;
+  sessions.onActiveChange(() => {
+    if (started) void remote.sync(sessions.client);
+  });
+
+  async function start(): Promise<void> {
+    let initError: string | null = null;
+    try {
+      initError = await deps.engine.engineInitError();
+    } catch (e) {
+      initError = errorMessage(e);
+    }
+    if (initError) errors.report(`Audio engine failed to start: ${initError}`);
+    else await settings.pushToEngine();
+
+    await player.attach();
+    await downloads.load();
+    await sessions.load();
+    started = true;
+    await remote.sync(sessions.client);
+  }
+
+  async function dispose(): Promise<void> {
+    started = false;
+    await remote.stop();
+    player.dispose();
+    downloads.dispose();
+  }
+
+  return { sessions, settings, player, downloads, favorites, remote, errors, start, dispose };
+}
+
+/** The real app: Tauri IPC, Rust-routed fetch, localStorage, OS keychain. */
+export function createProductionCore(): Core {
+  return createCore({
+    engine: ipc,
+    fetch: httpFetch,
+    kv: localKv,
+    openSocket,
+    secrets: { get: (k) => ipc.secretGet(k), set: (k, v) => ipc.secretSet(k, v) },
+    deviceName: 'Desktop',
+  });
+}
