@@ -59,6 +59,21 @@ describe('Router', () => {
   });
 });
 
+describe('Router.lastNav', () => {
+  it('tracks the kind of navigation', () => {
+    const r = new Router('home');
+    expect(r.lastNav).toBe('root');
+    r.push({ name: 'album', item: { id: 'a', name: 'A', type: 'MusicAlbum' } as never });
+    expect(r.lastNav).toBe('push');
+    r.back();
+    expect(r.lastNav).toBe('back');
+    r.forward();
+    expect(r.lastNav).toBe('forward');
+    r.go('songs');
+    expect(r.lastNav).toBe('root');
+  });
+});
+
 describe('UiState', () => {
   it('toasts keep the last three and auto-dismiss', () => {
     vi.useFakeTimers();

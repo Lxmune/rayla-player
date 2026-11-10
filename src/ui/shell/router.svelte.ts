@@ -22,7 +22,11 @@ export type Route = { name: RootRoute } | { name: DetailRoute; item: BaseItem };
 
 const isDetail = (r: Route): r is { name: DetailRoute; item: BaseItem } => 'item' in r;
 
+export type NavKind = 'push' | 'back' | 'forward' | 'root';
+
 export class Router {
+  /** How the last navigation happened; drives the page transition direction. */
+  lastNav = $state<NavKind>('root');
   /** History, oldest first; never empty. Replaced, never mutated. */
   stack = $state.raw<Route[]>([{ name: 'home' }]);
   /** Routes undone by back(), most recent last; cleared by any new navigation. */
@@ -47,12 +51,14 @@ export class Router {
   push(route: Route): void {
     this.stack = [...this.stack, route];
     this.forwardStack = [];
+    this.lastNav = 'push';
   }
 
   /** Switches to a top-level section, clearing the history. */
   go(root: RootRoute): void {
     this.stack = [{ name: root }];
     this.forwardStack = [];
+    this.lastNav = 'root';
   }
 
   back(): void {
@@ -60,6 +66,7 @@ export class Router {
     if (this.stack.length <= 1 || !top) return;
     this.stack = this.stack.slice(0, -1);
     this.forwardStack = [...this.forwardStack, top];
+    this.lastNav = 'back';
   }
 
   /** One system-Back step: pop a detail route, else return to Home. */
@@ -73,6 +80,7 @@ export class Router {
     if (!next) return;
     this.forwardStack = this.forwardStack.slice(0, -1);
     this.stack = [...this.stack, next];
+    this.lastNav = 'forward';
   }
 
   /** Opens the screen that matches an item (artist, album, playlist, genre); tracks are ignored. */

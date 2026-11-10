@@ -14,6 +14,8 @@
   import { getRouter, getUi } from '../shell/router.svelte';
   import { deviceIcon, OutputDevices } from '../sheets/output-devices.svelte';
   import { onDestroy, onMount } from 'svelte';
+  import { haptic } from '../common/haptics';
+  import { VelocityTracker, decideRelease, pastThreshold, sheetDragStyle } from '../shell/gestures';
   import Lyrics from './Lyrics.svelte';
   import QueuePanel from './QueuePanel.svelte';
   import SleepTimerButton from './SleepTimerButton.svelte';
@@ -41,17 +43,67 @@
       : (outputDevice?.name ?? 'Disconnected'),
   );
 
-  // Swipe down on the top bar or the cover to close (phones).
-  let swipe: { x: number; y: number } | null = null;
+  // Swipe down on the top bar or the cover: the sheet follows the finger, then closes or springs back.
+  let root: HTMLElement | undefined = $state();
+  let swipe: { x: number; y: number; id: number; el: HTMLElement } | null = null;
+  let dragging = false;
+  let crossed = false;
+  let dragY = $state(0);
+  let settling = $state(false);
+  const vel = new VelocityTracker();
+  const dragStyle = $derived(sheetDragStyle(dragY, root?.clientHeight ?? 0));
+
   function swipeStart(e: PointerEvent) {
-    swipe = { x: e.clientX, y: e.clientY };
+    if (e.pointerType === 'mouse') return;
+    swipe = { x: e.clientX, y: e.clientY, id: e.pointerId, el: e.currentTarget as HTMLElement };
+    dragging = false;
+    crossed = false;
+    settling = false;
+    vel.reset();
+  }
+  function swipeMove(e: PointerEvent) {
+    const s = swipe;
+    if (!s) return;
+    const dx = e.clientX - s.x;
+    const dy = e.clientY - s.y;
+    if (!dragging) {
+      if (dy > 8 && dy > Math.abs(dx) * 1.2) {
+        dragging = true;
+        try {
+          s.el.setPointerCapture(s.id);
+        } catch {
+          // best effort
+        }
+      } else if (Math.abs(dx) > 12 || dy < -8) {
+        swipe = null;
+        return;
+      } else return;
+    }
+    dragY = dy;
+    vel.add(e.timeStamp, dy);
+    const c = pastThreshold(dy, root?.clientHeight ?? 0);
+    if (c !== crossed) haptic('tick');
+    crossed = c;
   }
   function swipeEnd(e: PointerEvent) {
     const s = swipe;
     swipe = null;
-    if (!s) return;
-    const dy = e.clientY - s.y;
-    if (dy > 80 && dy > Math.abs(e.clientX - s.x) * 1.5) close();
+    if (!s || !dragging) return;
+    dragging = false;
+    settling = true;
+    const h = root?.clientHeight ?? 0;
+    if (decideRelease(e.clientY - s.y, vel.get(), h) === 'commit') {
+      dragY = h;
+      setTimeout(close, 180);
+    } else dragY = 0;
+  }
+  function swipeCancel() {
+    swipe = null;
+    if (dragging) {
+      dragging = false;
+      settling = true;
+      dragY = 0;
+    }
   }
 
   function close() {
@@ -90,11 +142,18 @@
 
 <svelte:window {onkeydown} />
 
-<section class="np" aria-label="Now playing">
+<section
+  class="np"
+  class:settling
+  aria-label="Now playing"
+  bind:this={root}
+  style:transform={dragY > 0 ? `translateY(${dragStyle.y}px) scale(${dragStyle.scale})` : undefined}
+  style:opacity={dragY > 0 ? dragStyle.opacity : undefined}
+>
   <Backdrop {item} />
 
-  <div class="top" role="presentation" onpointerdown={swipeStart} onpointerup={swipeEnd}
-    onpointercancel={() => (swipe = null)}>
+  <div class="top" role="presentation" onpointerdown={swipeStart} onpointermove={swipeMove}
+    onpointerup={swipeEnd} onpointercancel={swipeCancel}>
     <IconButton icon="chevronDown" label="Close now playing" onclick={close} />
     <div class="top-right">
       <BitPerfectBadge />
@@ -110,7 +169,7 @@
     <div class="left">
       {#if item}
         <div class="cover" class:paused role="presentation" onpointerdown={swipeStart}
-          onpointerup={swipeEnd} onpointercancel={() => (swipe = null)}>
+          onpointermove={swipeMove} onpointerup={swipeEnd} onpointercancel={swipeCancel}>
           <Artwork {item} size={640} fill />
         </div>
         <div class="meta">
@@ -193,9 +252,16 @@
     flex-direction: column;
     background: linear-gradient(160deg, color-mix(in srgb, var(--accent) 14%, var(--bg)), var(--bg) 60%);
     transition: background var(--accent-transition);
-    animation: slide-up var(--duration-slow) var(--ease-out);
+    animation: np-open 300ms var(--ease-out);
+    transform-origin: 50% 100%;
+    will-change: transform;
     padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px)
       env(safe-area-inset-left, 0px);
+  }
+  .np.settling {
+    transition:
+      transform 220ms var(--ease-out),
+      opacity 220ms var(--ease-out);
   }
   .top,
   .layout {
@@ -326,6 +392,7 @@
   .cover,
   .top {
     touch-action: pan-x;
+    user-select: none;
   }
   .right {
     display: flex;
@@ -412,20 +479,33 @@
     text-align: center;
   }
   @media (max-width: 900px) {
+    /* One scrolling column: player first, lyrics/queue panel below it. Children never
+       shrink (flex: none), so the panel can't draw over the controls. */
     .layout {
-      grid-template-columns: 1fr;
+      display: flex;
+      flex-direction: column;
       overflow-y: auto;
+      overscroll-behavior: contain;
       gap: var(--space-4);
       padding: 0 var(--space-4) var(--space-4);
     }
     .left {
+      flex: none;
       justify-content: flex-start;
+      width: min(100%, 520px);
     }
     .cover {
       width: min(80vw, 42vh);
     }
     .right {
-      min-height: 60vh;
+      flex: none;
+      height: 70vh;
+      height: 70dvh;
+      min-height: 320px;
+      width: 100%;
+    }
+    .panel {
+      overflow-y: auto;
     }
     .controls :global(.transport) {
       gap: var(--space-3);
@@ -460,9 +540,18 @@
       padding: var(--space-2) var(--space-4);
     }
   }
+  @media (hover: none) {
+    .output:active,
+    .next:active {
+      transform: scale(0.96);
+      opacity: 0.8;
+    }
+  }
   @media (prefers-reduced-motion: reduce) {
-    .np {
+    .np,
+    .np.settling {
       animation: none;
+      transition: none;
     }
     .cover {
       transition: none;

@@ -11,7 +11,9 @@
   import { useActions } from '../common/actions';
   import { useItemMenu } from '../common/item-menu';
   import { getRouter, getUi } from './router.svelte';
+  import { haptic } from '../common/haptics';
   import { classifySwipe } from './swipe';
+  import { CLOSE_FRACTION, FLICK_PX_PER_MS, VelocityTracker, decideSkip } from './gestures';
 
   let { phone = false }: { phone?: boolean } = $props();
 
@@ -36,22 +38,104 @@
     if (artist) router.open(artist);
   }
 
-  // Phone mini player gestures: swipe up opens now playing, swipe sideways skips.
-  let start: { x: number; y: number } | null = null;
+  // Phone mini player gestures: the card follows the finger. Up opens now playing,
+  // sideways skips (track info slides out, the next one slides in), else it snaps back.
+  let bar: HTMLElement | undefined = $state();
+  let start: { x: number; y: number; id: number } | null = null;
+  let mode: 'h' | 'v' | null = null;
   let swiped = false;
+  let crossed = false;
+  const vel = new VelocityTracker();
+  let dragX = $state(0);
+  let dragY = $state(0);
+  let settling = $state(false);
+  let enter = $state<'' | 'left' | 'right'>('');
+
   function onpointerdown(e: PointerEvent) {
-    if (!phone || !item) return;
-    start = { x: e.clientX, y: e.clientY };
+    if (!phone || !item || e.pointerType === 'mouse') return;
+    start = { x: e.clientX, y: e.clientY, id: e.pointerId };
+    mode = null;
     swiped = false;
+    crossed = false;
+    settling = false;
+    vel.reset();
+  }
+  function onpointermove(e: PointerEvent) {
+    if (!start) return;
+    const dx = e.clientX - start.x;
+    const dy = e.clientY - start.y;
+    if (!mode) {
+      if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+      mode = Math.abs(dx) > Math.abs(dy) ? 'h' : 'v';
+      try {
+        bar?.setPointerCapture(start.id);
+      } catch {
+        // capture is best effort
+      }
+    }
+    if (mode === 'h') {
+      dragX = dx;
+      vel.add(e.timeStamp, dx);
+      const c = Math.abs(dx) >= (bar?.clientWidth ?? 360) * CLOSE_FRACTION;
+      if (c !== crossed) haptic('tick');
+      crossed = c;
+    } else {
+      dragY = Math.min(0, dy);
+      vel.add(e.timeStamp, dy);
+      const c = -dy >= 48;
+      if (c !== crossed) haptic('tick');
+      crossed = c;
+    }
   }
   function onpointerup(e: PointerEvent) {
-    if (!start) return;
-    const result = classifySwipe(e.clientX - start.x, e.clientY - start.y);
+    const s = start;
     start = null;
-    if (result === 'none' || result === 'tap') return;
-    swiped = true;
-    if (result === 'up') openNowPlaying();
-    else void actions.guard(() => (result === 'left' ? player.next() : player.previous()));
+    if (!s) return;
+    const m = mode;
+    mode = null;
+    const dx = e.clientX - s.x;
+    const dy = e.clientY - s.y;
+    if (m) swiped = true;
+    settling = true;
+    if (m === 'v') {
+      const v = -vel.get();
+      dragY = 0;
+      if (-dy >= 48 || v >= FLICK_PX_PER_MS) {
+        haptic('tick');
+        openNowPlaying();
+      }
+      return;
+    }
+    if (m === 'h') {
+      const w = bar?.clientWidth ?? 360;
+      const verdict = decideSkip(dx, Math.abs(vel.get()), w);
+      if (verdict === 'cancel') {
+        dragX = 0;
+        return;
+      }
+      haptic('tick');
+      dragX = 0;
+      enter = verdict === 'next' ? 'left' : 'right';
+      setTimeout(() => (enter = ''), 260);
+      void actions.guard(() => (verdict === 'next' ? player.next() : player.previous()));
+      return;
+    }
+    // No move events seen (synthetic or very quick flick): classify the whole drag.
+    const r = classifySwipe(dx, dy);
+    if (r === 'up') openNowPlaying();
+    else if (r === 'left' || r === 'right') {
+      swiped = true;
+      enter = r === 'left' ? 'left' : 'right';
+      setTimeout(() => (enter = ''), 260);
+      void actions.guard(() => (r === 'left' ? player.next() : player.previous()));
+    }
+  }
+  function oncancel() {
+    start = null;
+    mode = null;
+    settling = true;
+    dragX = 0;
+    dragY = 0;
   }
   /** A swipe must not also trigger the click of the control it started on. */
   function onclickcapture(e: MouseEvent) {
@@ -70,13 +154,25 @@
   class:empty={!item}
   class:phone
   aria-label="Player"
+  bind:this={bar}
   {onpointerdown}
+  {onpointermove}
   {onpointerup}
-  onpointercancel={() => (start = null)}
+  onpointercancel={oncancel}
   {onclickcapture}
+  style:transform={phone && dragY !== 0 ? `translateY(${dragY * 0.6}px)` : undefined}
+  class:settling
 >
   <span class="mini-progress" style:transform="scaleX({progress})" aria-hidden="true"></span>
-  <div class="now" {oncontextmenu} role="presentation">
+  <div
+    class="now"
+    class:enter-left={enter === 'left'}
+    class:enter-right={enter === 'right'}
+    style:transform={phone && dragX !== 0 ? `translateX(${dragX}px)` : undefined}
+    style:opacity={phone && dragX !== 0 ? 1 - Math.min(0.7, Math.abs(dragX) / 300) : undefined}
+    {oncontextmenu}
+    role="presentation"
+  >
     {#if item}
       <button type="button" class="art" aria-label="Open now playing" onclick={openNowPlaying}>
         <Artwork {item} size={56} />
@@ -134,6 +230,7 @@
     transition: background var(--accent-transition);
   }
   .now {
+    will-change: auto;
     display: flex;
     align-items: center;
     gap: var(--space-3);
@@ -222,6 +319,25 @@
   }
   .mini-progress {
     display: none;
+  }
+  .settling .now,
+  .bar.settling {
+    transition:
+      transform var(--duration) var(--ease-out),
+      opacity var(--duration) var(--ease-out);
+  }
+  .now.enter-left {
+    animation: track-in-left 240ms var(--ease-out);
+  }
+  .now.enter-right {
+    animation: track-in-right 240ms var(--ease-out);
+  }
+  @media (hover: none) {
+    .bar :global(.icon-btn:active),
+    .art:active {
+      transform: scale(0.96);
+      opacity: 0.8;
+    }
   }
   @media (max-width: 720px) and (min-width: 641px) {
     .bar {

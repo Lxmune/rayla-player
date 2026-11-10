@@ -5,7 +5,11 @@
   import IconButton from '../common/IconButton.svelte';
   import { getRouter, getUi, type MenuEntry, type RootRoute } from './router.svelte';
 
-  let { scrolled = false, phone = false }: { scrolled?: boolean; phone?: boolean } = $props();
+  let {
+    scrolled = false,
+    phone = false,
+    chipsHidden = false,
+  }: { scrolled?: boolean; phone?: boolean; chipsHidden?: boolean } = $props();
 
   const app = getApp();
   const router = getRouter();
@@ -119,7 +123,7 @@
       {/if}
     </div>
     {#if !detail && !searching}
-      <nav class="chips" aria-label="Sections">
+      <nav class="chips" class:hidden={chipsHidden} inert={chipsHidden} aria-label="Sections">
         {#each CHIPS as c (c.id)}
           <button
             type="button"
@@ -132,6 +136,9 @@
       </nav>
     {/if}
   </header>
+  {#if !detail && !searching}
+    <div class="chips-spacer" aria-hidden="true"></div>
+  {/if}
 {:else}
 <header class="top" class:scrolled>
   <div class="nav">
@@ -272,6 +279,15 @@
     font-weight: var(--weight-bold);
     letter-spacing: var(--tracking-tight);
   }
+  .title {
+    transform-origin: left center;
+    transition:
+      transform var(--duration) var(--ease-out),
+      opacity var(--duration) var(--ease-out);
+  }
+  .top.scrolled .title:not(.compact) {
+    transform: scale(0.82);
+  }
   .title.compact {
     font-size: var(--text-md);
     font-weight: var(--weight-semibold);
@@ -301,13 +317,37 @@
     flex: 1;
     height: 40px;
   }
+  /* The chip row hangs below the sticky bar so it can slide away with a transform. */
+  .top.phone {
+    position: sticky;
+  }
+  .chips-spacer {
+    height: 44px;
+  }
   .chips {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    height: 44px;
+    padding-top: var(--space-1);
+    background: var(--bg-elevated);
+    z-index: -1;
+    transition:
+      transform var(--duration) var(--ease-out),
+      opacity var(--duration) var(--ease-out);
+    will-change: transform;
     display: flex;
     gap: var(--space-2);
     padding: 0 var(--gutter) var(--space-2);
     overflow-x: auto;
     scrollbar-width: none;
     overscroll-behavior-x: contain;
+  }
+  .chips.hidden {
+    transform: translateY(-100%);
+    opacity: 0;
+    pointer-events: none;
   }
   .chips::-webkit-scrollbar {
     display: none;
@@ -329,6 +369,22 @@
       background var(--transition),
       color var(--transition),
       border-color var(--transition);
+  }
+  @media (hover: none) {
+    .chip:active,
+    .avatar:active {
+      transform: scale(0.96);
+      opacity: 0.8;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .chips,
+    .title {
+      transition: none;
+    }
+  }
+  :global(:root[data-motion='reduced']) .chips {
+    transition: none;
   }
   .chip.on {
     border-color: transparent;

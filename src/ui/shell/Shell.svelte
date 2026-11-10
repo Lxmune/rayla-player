@@ -31,6 +31,8 @@
   import TopBar from './TopBar.svelte';
   import { HistorySync } from './history-sync';
   import { watchPhone } from './phone';
+  import { ScrollMemory, nextChipsHidden, pullState, shouldStartPull, PULL_TRIGGER_PX } from './gestures';
+  import { haptic } from '../common/haptics';
   import { shortcutFor, type ShortcutAction } from './shortcuts';
   import {
     Router,
@@ -90,11 +92,99 @@
   let scrolled = $state(false);
   let lastVolume = 1;
 
-  // Every navigation starts at the top of the page.
+  // Scroll offsets per stack depth: pushes start at the top, back restores the page's offset.
+  const memory = new ScrollMemory();
+  let lastDepth = 0;
+  let chipsHidden = $state(false);
+  let refreshKey = $state(0);
+  $effect.pre(() => {
+    void route;
+    // Runs before the DOM swaps: remember where the departing page was scrolled to.
+    if (scroller) memory.save(lastDepth, scroller.scrollTop);
+  });
   $effect(() => {
     void route;
-    if (scroller) scroller.scrollTop = 0;
-    scrolled = false;
+    const depth = router.stack.length - 1;
+    const nav = router.lastNav;
+    if (nav === 'root') memory.clear();
+    else if (nav === 'push') memory.clearFrom(depth);
+    const top = nav === 'back' || nav === 'forward' ? memory.take(depth) : 0;
+    lastDepth = depth;
+    if (scroller) {
+      scroller.scrollTop = top;
+      if (top > 0) requestAnimationFrame(() => scroller && (scroller.scrollTop = top));
+    }
+    scrolled = top > 4;
+    chipsHidden = false;
+    pull = 0;
+  });
+
+  let prevTop = 0;
+  function onscroll() {
+    const top = scroller?.scrollTop ?? 0;
+    scrolled = top > 4;
+    if (phone) chipsHidden = nextChipsHidden(prevTop, top, chipsHidden);
+    prevTop = top;
+  }
+
+  // Pull to refresh (phone root screens): remounts the page so it refetches.
+  const PULL_ROUTES = ['home', 'albums', 'artists', 'songs', 'playlists', 'genres', 'favorites', 'downloads'];
+  const canPull = $derived(phone && PULL_ROUTES.includes(route.name));
+  let pull = $state(0);
+  let pulling = $state(false);
+  let pullArmed = false;
+  $effect(() => {
+    const el = scroller;
+    if (!el || !canPull) return;
+    let sx = 0;
+    let sy = 0;
+    let active = false;
+    let tracking = false;
+    const start = (e: TouchEvent) => {
+      const t = e.touches[0];
+      if (!t || e.touches.length > 1) return;
+      sx = t.clientX;
+      sy = t.clientY;
+      tracking = el.scrollTop <= 0;
+      active = false;
+    };
+    const move = (e: TouchEvent) => {
+      const t = e.touches[0];
+      if (!t || !tracking) return;
+      const dx = t.clientX - sx;
+      const dy = t.clientY - sy;
+      if (!active) {
+        if (dy < -6 || Math.abs(dx) > 12) tracking = false;
+        else if (shouldStartPull(el.scrollTop, dx, dy)) active = true;
+        else return;
+        if (!active) return;
+        pulling = true;
+      }
+      if (e.cancelable) e.preventDefault();
+      const st = pullState(dy);
+      pull = st.offset;
+      if (st.armed && !pullArmed) haptic('tick');
+      pullArmed = st.armed;
+    };
+    const end = () => {
+      if (active && pullArmed) {
+        haptic('confirm');
+        refreshKey++;
+      }
+      active = tracking = pullArmed = false;
+      pulling = false;
+      pull = 0;
+    };
+    el.addEventListener('touchstart', start, { passive: true });
+    el.addEventListener('touchmove', move, { passive: false });
+    el.addEventListener('touchend', end);
+    el.addEventListener('touchcancel', end);
+    return () => {
+      el.removeEventListener('touchstart', start);
+      el.removeEventListener('touchmove', move);
+      el.removeEventListener('touchend', end);
+      el.removeEventListener('touchcancel', end);
+    };
   });
 
   const isTyping = (t: EventTarget | null) =>
@@ -191,12 +281,21 @@
       <div
         class="scroller"
         bind:this={scroller}
-        onscroll={() => (scrolled = (scroller?.scrollTop ?? 0) > 4)}
+        {onscroll}
       >
-        <TopBar bind:this={topbar} {scrolled} {phone} />
+        <TopBar bind:this={topbar} {scrolled} {phone} {chipsHidden} />
+        {#if canPull}
+          <div class="pull" class:released={!pulling} aria-hidden="true"
+            style:transform="translateY({pull - 44}px)" style:opacity={Math.min(1, pull / PULL_TRIGGER_PX)}>
+            <svg viewBox="0 0 24 24" width="22" height="22" style:transform="rotate({Math.min(1, pull / PULL_TRIGGER_PX) * 180}deg)">
+              <path d="M12 5v14M6 13l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </div>
+        {/if}
         <main class="content">
-          {#key route}
-            <div class="page">
+          {#key route}{#key refreshKey}
+            <div class="page nav-{router.lastNav}" style:transform={pull > 0 ? `translateY(${pull * 0.5}px)` : undefined}
+              class:released={!pulling}>
         {#if route.name === 'home'}
           <HomeScreen />
         {:else if route.name === 'artists'}
@@ -227,7 +326,7 @@
           <GenreScreen item={route.item} />
         {/if}
             </div>
-          {/key}
+          {/key}{/key}
         </main>
       </div>
     </div>
@@ -306,5 +405,64 @@
   }
   .page {
     animation: rise-in var(--duration-slow) var(--ease-out);
+  }
+  .page.released {
+    transition: transform var(--duration) var(--ease-out);
+  }
+  .page.nav-push {
+    animation: page-in-right 240ms var(--ease-out);
+  }
+  .page.nav-forward {
+    animation: page-in-right 240ms var(--ease-out);
+  }
+  .page.nav-back {
+    animation: page-in-left 240ms var(--ease-out);
+  }
+  .page.nav-root {
+    animation: rise-in 220ms var(--ease-out);
+  }
+  .phone .page.nav-push,
+  .phone .page.nav-forward {
+    animation: page-in-right-lg 280ms var(--ease-out);
+  }
+  .phone .page.nav-back {
+    animation: page-in-left-lg 280ms var(--ease-out);
+  }
+  .pull {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    z-index: calc(var(--z-sticky) - 1);
+    margin-left: -18px;
+    width: 36px;
+    height: 36px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    background: var(--surface-2);
+    color: var(--accent);
+    box-shadow: var(--shadow-2);
+    pointer-events: none;
+    will-change: transform;
+  }
+  .pull.released {
+    transition: transform var(--duration) var(--ease-out), opacity var(--duration) var(--ease-out);
+  }
+  .pull svg {
+    will-change: transform;
+  }
+  .scroller {
+    position: relative;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .page,
+    .page.released,
+    .pull.released {
+      animation: none !important;
+      transition: none !important;
+    }
+  }
+  :global(:root[data-motion='reduced']) .page {
+    animation: none !important;
   }
 </style>

@@ -257,6 +257,48 @@ button {
     transform: translateX(100%);
   }
 }
+@keyframes page-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+}
+@keyframes page-in-left {
+  from {
+    opacity: 0;
+    transform: translateX(-24px);
+  }
+}
+@keyframes page-in-right-lg {
+  from {
+    opacity: 0;
+    transform: translateX(40px);
+  }
+}
+@keyframes page-in-left-lg {
+  from {
+    opacity: 0;
+    transform: translateX(-40px);
+  }
+}
+@keyframes np-open {
+  from {
+    transform: translateY(100%) scale(0.96);
+    opacity: 0.6;
+  }
+}
+@keyframes track-in-left {
+  from {
+    opacity: 0;
+    transform: translateX(40px);
+  }
+}
+@keyframes track-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(-40px);
+  }
+}
 @keyframes shimmer {
   from {
     background-position: -200% 0;
