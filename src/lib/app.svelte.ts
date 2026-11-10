@@ -4,6 +4,9 @@
 
 import { getContext, setContext } from 'svelte';
 import { createCore, createProductionCore, type Core, type CoreDeps } from './core.svelte';
+import { isAndroid, clearNowPlaying, onMediaAction, updateNowPlaying } from './android';
+import { imageItemId } from './jellyfin/models';
+import { MediaSession, type MediaBridge } from './integrations/media-session';
 import { ipc } from './ipc';
 import { httpFetch, localKv, type HttpFetch, type KeyValueStore } from './platform';
 import type { Secrets } from './jellyfin/session.svelte';
@@ -25,6 +28,8 @@ export interface IntegrationDeps {
   secrets: Secrets;
   setActivity: SetActivity;
   clock?: () => number;
+  /** Android media session switch / bridge; defaults to `isAndroid` and the real plugin. */
+  android?: { enabled: boolean; bridge: MediaBridge };
 }
 
 export function createApp(core: Core, deps: IntegrationDeps): RaylaApp {
@@ -72,6 +77,28 @@ export function createApp(core: Core, deps: IntegrationDeps): RaylaApp {
           if (s.discord !== prev.discord) observePresence();
         }),
       );
+      const android = deps.android ?? {
+        enabled: isAndroid,
+        bridge: { updateNowPlaying, clearNowPlaying, onMediaAction },
+      };
+      if (android.enabled) {
+        const session = new MediaSession({
+          player: core.player,
+          bridge: android.bridge,
+          artUrl: (item) => {
+            const client = core.sessions.client;
+            return client
+              ? client.imageUrl(imageItemId(item), { maxWidth: 512, tag: item.primaryImageTag })
+              : null;
+          },
+          onError: (e) => core.errors.report(e),
+        });
+        void session.start();
+        unsubscribe.push(
+          () => session.dispose(),
+          core.sessions.onActiveChange(() => session.observe()),
+        );
+      }
       void scrobble.flushPending().catch(() => {});
     },
     async dispose() {
@@ -92,7 +119,7 @@ export function createProductionApp(): RaylaApp {
 }
 
 /** For tests: an app over `createCore(deps)` with the same fakes. */
-export function createTestApp(deps: CoreDeps & { setActivity: SetActivity }): RaylaApp {
+export function createTestApp(deps: CoreDeps & { setActivity: SetActivity; android?: IntegrationDeps["android"] }): RaylaApp {
   return createApp(createCore(deps), deps);
 }
 

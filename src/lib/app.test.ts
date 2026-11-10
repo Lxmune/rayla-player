@@ -13,7 +13,7 @@ import {
   track,
 } from './test-support';
 
-function build() {
+function build(android?: { enabled: boolean; bridge: any }) {
   const engine = new FakeEngine();
   const dl = new FakeDownloadsEngine();
   const combined: CoreEngine = {
@@ -42,6 +42,7 @@ function build() {
     secrets: memorySecrets(),
     generateDeviceId: () => 'dev-x',
     remoteBackoff: () => 0,
+    android,
     setActivity: async (id, a) => {
       activities.push([id, a]);
     },
@@ -65,5 +66,24 @@ describe('createApp wiring', () => {
     await flush();
     expect(activities.at(-1)?.[1]).toBeNull();
     await app.dispose();
+  });
+
+  it('wires the Android media session only when enabled', async () => {
+    for (const enabled of [false, true]) {
+      const updates: unknown[] = [];
+      const bridge = {
+        updateNowPlaying: async (i: unknown) => void updates.push(i),
+        clearNowPlaying: async () => {},
+        onMediaAction: async () => () => {},
+      };
+      const { app, engine } = build({ enabled, bridge });
+      await app.start();
+      await app.core.player.playQueue([track('a')]);
+      engine.trackStarted('a');
+      engine.state('playing');
+      await new Promise((r) => setTimeout(r, 80));
+      expect(updates.length > 0).toBe(enabled);
+      await app.dispose();
+    }
   });
 });
