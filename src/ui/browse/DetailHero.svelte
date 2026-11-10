@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { Snippet } from 'svelte';
+  import { onMount, type Snippet } from 'svelte';
   import type { BaseItem } from '../../lib/jellyfin/models';
   import Artwork from '../common/Artwork.svelte';
   import Backdrop from '../common/Backdrop.svelte';
@@ -19,12 +19,24 @@
   } = $props();
 
   const round = $derived(item.type === 'MusicArtist');
+
+  // Phones get a compact hero: smaller art beside the title. matchMedia is missing in jsdom.
+  let compact = $state(false);
+  onMount(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+    const mq = window.matchMedia('(max-width: 640px)');
+    compact = mq.matches;
+    const on = (e: MediaQueryListEvent) => (compact = e.matches);
+    mq.addEventListener?.('change', on);
+    return () => mq.removeEventListener?.('change', on);
+  });
+  const artSize = $derived(compact ? (round ? 112 : 128) : 232);
 </script>
 
 <header class="hero">
   <Backdrop {item} />
   <div class="art" class:round>
-    <Artwork {item} size={232} {round} />
+    <Artwork {item} size={artSize} {round} />
   </div>
   <div class="info">
     <span class="kind">{kind}</span>
@@ -114,6 +126,50 @@
     .meta,
     .actions {
       justify-content: center;
+    }
+  }
+  @media (max-width: 640px) {
+    .hero {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      column-gap: var(--space-4);
+      row-gap: 0;
+      align-items: end;
+      text-align: left;
+      padding-top: var(--space-4);
+      padding-bottom: var(--space-4);
+    }
+    .info {
+      display: contents;
+    }
+    .art {
+      grid-column: 1;
+      grid-row: 1 / span 2;
+    }
+    .kind {
+      grid-column: 2;
+      grid-row: 1;
+      align-self: end;
+    }
+    h1 {
+      grid-column: 2;
+      grid-row: 2;
+      align-self: start;
+      font-size: clamp(var(--text-lg), 6vw, var(--text-xl));
+      margin: var(--space-1) 0 0;
+    }
+    .meta {
+      grid-column: 1 / -1;
+      justify-content: flex-start;
+      margin: var(--space-3) 0 var(--space-3);
+    }
+    .actions {
+      grid-column: 1 / -1;
+      justify-content: flex-start;
+      gap: var(--space-2);
+    }
+    .meta:empty {
+      display: none;
     }
   }
   @media (prefers-reduced-motion: reduce) {

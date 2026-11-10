@@ -4,6 +4,7 @@
   import Artwork from '../common/Artwork.svelte';
   import Backdrop from '../common/Backdrop.svelte';
   import BitPerfectBadge from '../common/BitPerfectBadge.svelte';
+  import Icon from '../common/Icon.svelte';
   import IconButton from '../common/IconButton.svelte';
   import SeekBar from '../common/SeekBar.svelte';
   import Transport from '../common/Transport.svelte';
@@ -11,6 +12,8 @@
   import { useActions } from '../common/actions';
   import { useItemMenu } from '../common/item-menu';
   import { getRouter, getUi } from '../shell/router.svelte';
+  import { deviceIcon, OutputDevices } from '../sheets/output-devices.svelte';
+  import { onDestroy, onMount } from 'svelte';
   import Lyrics from './Lyrics.svelte';
   import QueuePanel from './QueuePanel.svelte';
   import SleepTimerButton from './SleepTimerButton.svelte';
@@ -26,6 +29,30 @@
   const paused = $derived(!player.isPlaying && player.playback !== 'buffering');
   const upNext = $derived(player.nextIndex === null ? null : (player.queue[player.nextIndex]?.item ?? null));
   const tab = $derived(ui.nowPlayingTab);
+
+  const outputs = new OutputDevices();
+  onMount(() => void outputs.start());
+  onDestroy(() => outputs.dispose());
+  const outputId = $derived(app.core.settings.current.outputDeviceId);
+  const outputDevice = $derived(outputs.find(outputId));
+  const outputName = $derived(
+    outputId === null
+      ? (outputs.defaultDevice?.name ?? 'System default')
+      : (outputDevice?.name ?? 'Disconnected'),
+  );
+
+  // Swipe down on the top bar or the cover to close (phones).
+  let swipe: { x: number; y: number } | null = null;
+  function swipeStart(e: PointerEvent) {
+    swipe = { x: e.clientX, y: e.clientY };
+  }
+  function swipeEnd(e: PointerEvent) {
+    const s = swipe;
+    swipe = null;
+    if (!s) return;
+    const dy = e.clientY - s.y;
+    if (dy > 80 && dy > Math.abs(e.clientX - s.x) * 1.5) close();
+  }
 
   function close() {
     ui.nowPlayingOpen = false;
@@ -66,7 +93,8 @@
 <section class="np" aria-label="Now playing">
   <Backdrop {item} />
 
-  <div class="top">
+  <div class="top" role="presentation" onpointerdown={swipeStart} onpointerup={swipeEnd}
+    onpointercancel={() => (swipe = null)}>
     <IconButton icon="chevronDown" label="Close now playing" onclick={close} />
     <div class="top-right">
       <BitPerfectBadge />
@@ -81,7 +109,8 @@
   <div class="layout">
     <div class="left">
       {#if item}
-        <div class="cover" class:paused>
+        <div class="cover" class:paused role="presentation" onpointerdown={swipeStart}
+          onpointerup={swipeEnd} onpointercancel={() => (swipe = null)}>
           <Artwork {item} size={640} fill />
         </div>
         <div class="meta">
@@ -115,7 +144,14 @@
       <div class="controls">
         <SeekBar />
         <Transport secondary />
-        <div class="volume"><VolumeControl /></div>
+        <div class="volume">
+          <VolumeControl />
+          <button type="button" class="output" aria-label="Output: {outputName}"
+            onclick={() => (ui.sheet = { kind: 'output' })}>
+            <Icon name={deviceIcon(outputName)} size={20} />
+            <span class="output-name">{outputName}</span>
+          </button>
+        </div>
       </div>
     </div>
 
@@ -257,7 +293,39 @@
   }
   .volume {
     display: flex;
+    align-items: center;
     justify-content: center;
+    gap: var(--space-3);
+    flex-wrap: wrap;
+  }
+  .output {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-height: 40px;
+    max-width: 14em;
+    padding: 0 var(--space-3);
+    border: 1px solid var(--glass-border);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--text-muted);
+    font: inherit;
+    font-size: var(--text-xs);
+    cursor: pointer;
+    transition: background var(--transition), color var(--transition);
+  }
+  .output:hover {
+    background: var(--hover);
+    color: var(--text);
+  }
+  .output-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .cover,
+  .top {
+    touch-action: pan-x;
   }
   .right {
     display: flex;
@@ -354,10 +422,42 @@
       justify-content: flex-start;
     }
     .cover {
-      width: min(100%, 38vh);
+      width: min(80vw, 42vh);
     }
     .right {
       min-height: 60vh;
+    }
+    .controls :global(.transport) {
+      gap: var(--space-3);
+    }
+    .controls :global(.transport .main .icon-btn.primary) {
+      width: 64px;
+      height: 64px;
+    }
+    .controls :global(.transport .main svg) {
+      width: 28px;
+      height: 28px;
+    }
+  }
+  @media (max-width: 480px) {
+    .top {
+      padding: var(--space-2) var(--space-3);
+    }
+    .top-right {
+      gap: 0;
+    }
+    .top-right :global(.badge) {
+      display: none;
+    }
+    .layout {
+      padding: 0 var(--space-4) var(--space-4);
+    }
+    .left {
+      gap: var(--space-5);
+    }
+    .tabs button {
+      min-height: 40px;
+      padding: var(--space-2) var(--space-4);
     }
   }
   @media (prefers-reduced-motion: reduce) {

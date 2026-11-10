@@ -1,25 +1,20 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import { getApp } from '../../lib/app.svelte';
-  import { ipc, type OutputDevice } from '../../lib/ipc';
-  import { errorMessage } from '../../lib/player/errors.svelte';
+  import type { OutputDevice } from '../../lib/ipc';
   import { formatSampleRate } from '../../lib/jellyfin/models';
+  import { OutputDevices } from '../sheets/output-devices.svelte';
   import Section from './Section.svelte';
   import ToggleRow from './ToggleRow.svelte';
 
   const settings = getApp().core.settings;
-  let devices = $state<OutputDevice[]>([]);
-  let loadError = $state<string | null>(null);
-  let loading = $state(true);
+  const list = new OutputDevices();
+  const devices = $derived(list.devices);
+  const loadError = $derived(list.error);
+  const loading = $derived(list.loading);
 
-  onMount(async () => {
-    try {
-      devices = await ipc.listDevices();
-    } catch (e) {
-      loadError = errorMessage(e);
-    }
-    loading = false;
-  });
+  onMount(() => void list.start());
+  onDestroy(() => list.dispose());
 
   const selectedId = $derived(settings.current.outputDeviceId);
   /** The device actually used: the chosen one, else the system default. */

@@ -62,6 +62,11 @@ export const ICONS = {
   eyeOff: { fill: false, d: 'M3 3l18 18M10.600 6.100A10 10 0 0 1 12 6c6.400 0 10 6 10 6a17 17 0 0 1-3.200 3.800M6.600 6.600C3.700 8.300 2 12 2 12s3.600 6 10 6a9.700 9.700 0 0 0 4.400-1M9.900 9.900a3 3 0 0 0 4.200 4.200' },
   user: { fill: false, d: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21a8 8 0 0 1 16 0' },
   music: { fill: false, d: 'M9 18V5l11-2v13M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0zM20 16a3 3 0 1 1-6 0 3 3 0 0 1 6 0z' },
+  headphones: { fill: false, d: 'M4 15v-3a8 8 0 0 1 16 0v3M4 14h3v6H4zM17 14h3v6h-3z' },
+  speaker: { fill: false, d: 'M7 3h10v18H7zM12 7h.01M12 17a3 3 0 1 0 0-6 3 3 0 0 0 0 6z' },
+  bluetooth: { fill: false, d: 'M7 7l10 10-5 4V3l5 4L7 17' },
+  usb: { fill: false, d: 'M12 21a1.500 1.500 0 1 0 0-3 1.500 1.500 0 0 0 0 3zM12 18V4M10 6l2-3 2 3M12 13l-4-3V8M12 11l4-2V7' },
+  hdmi: { fill: false, d: 'M3 7h18v7l-3 3H6l-3-3zM8 11h8' },
 } as const;
 
 export type IconName = keyof typeof ICONS;
