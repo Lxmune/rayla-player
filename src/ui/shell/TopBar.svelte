@@ -191,12 +191,13 @@
     background: var(--bg-elevated);
     border-bottom-color: var(--border);
   }
-  /* A blurred sticky bar repaints every scroll frame on Android WebView: go opaque. */
+  /* A blurred sticky bar repaints every scroll frame on Android WebView: go opaque.
+     No `contain: paint` here: the phone section chips hang below the bar's box
+     (absolute, top: 100%) and paint containment would clip them away. */
   @media (hover: none), (max-width: 640px) {
     .top {
       background: var(--bg-elevated);
       backdrop-filter: none;
-      contain: paint;
     }
   }
   .nav,
