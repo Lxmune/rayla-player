@@ -116,7 +116,9 @@ export type SheetKind =
   | { kind: 'shortcuts' }
   | { kind: 'addToPlaylist'; tracks: BaseItem[] }
   /** Live output picker (device + exclusive), src/ui/sheets/OutputSheet.svelte. */
-  | { kind: 'output' };
+  | { kind: 'output' }
+  /** Quick sound & quality controls, src/ui/sheets/AudioSheet.svelte. */
+  | { kind: 'audio' };
 
 /** One context-menu row, or a divider. */
 export type MenuEntry =
