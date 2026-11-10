@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DownloadsStore } from '../downloads/store.svelte';
 import { memoryKv } from '../platform';
 import { SettingsStore } from '../settings/store.svelte';
@@ -11,7 +11,7 @@ import {
   track,
   trackJson,
 } from '../test-support';
-import { PlayerController, type PlayerEvent } from './controller.svelte';
+import { PlayerController, type PlayerEvent, type RadioSource } from './controller.svelte';
 import { EngineErrors } from './errors.svelte';
 
 function seededRandom(seed: number): () => number {
@@ -244,7 +244,7 @@ describe('PlayerController', () => {
       durationMs: 0,
       signalPath: path,
       message: null,
-      throughputBps: 0,
+      throughputBps: 0, cachedBytes: 0, totalBytes: 0,
     });
     expect(t.player.signalPath).toEqual(path);
     await t.player.next();
@@ -618,5 +618,128 @@ describe('PlayerController', () => {
       t.engine.throughput(50_000);
       expect(t.player.effectiveMaxBitrate).toBeNull();
     });
+  });
+});
+
+describe('PlayerController flac codec', () => {
+  it('uses flac only when the effective cap is at least CD quality', async () => {
+    const t = setup();
+    await t.player.attach();
+    await t.settings.updateStreaming({ codec: 'flac' });
+    await t.settings.setMaxBitrate(1_411_000);
+    await t.player.playQueue([track('a')]);
+    const url = new URL(t.engine.loaded[0]?.url ?? '');
+    expect(url.searchParams.get('AudioCodec')).toBe('flac');
+    expect(url.searchParams.get('MaxAudioBitDepth')).toBe('16');
+    await t.settings.setMaxBitrate(192_000);
+    await t.player.playQueue([track('b')]);
+    expect(new URL(t.engine.loaded[1]?.url ?? '').searchParams.get('AudioCodec')).toBe('aac');
+  });
+});
+
+describe('PlayerController radio', () => {
+  const seed = ['s1', 's2'].map((i) => track(i));
+  let t: ReturnType<typeof setup>;
+  const ids = () => t.player.queue.map((e) => e.item.id);
+  const batch = (prefix: string, n: number) => Array.from({ length: n }, (_, i) => track(`${prefix}${i}`));
+
+  beforeEach(async () => {
+    t = setup();
+    await t.player.attach();
+  });
+
+  it('extends when few tracks remain, passing recent items, skipping known ids', async () => {
+    const calls: string[][] = [];
+    const more: RadioSource = async (recent) => {
+      calls.push(recent.map((r) => r.id));
+      return [track('s1'), ...batch('m', 5)];
+    };
+    await t.player.playRadio(seed, more, 'Mix');
+    await flush();
+    expect(t.player.radio).toEqual({ label: 'Mix' });
+    expect(calls).toEqual([['s1']]);
+    expect(ids()).toEqual(['s1', 's2', 'm0', 'm1', 'm2', 'm3', 'm4']);
+  });
+
+  it('extends again as playback approaches the end, one call at a time', async () => {
+    let n = 0;
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const more: RadioSource = async () => {
+      inFlight++;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await flush();
+      inFlight--;
+      return batch(`r${n++}-`, 4);
+    };
+    await t.player.playRadio(seed, more, 'Mix');
+    await flush();
+    await flush();
+    expect(ids().length).toBe(2 + 4);
+    t.engine.trackStarted('s2');
+    await flush();
+    t.engine.trackStarted('r0-0');
+    await flush();
+    await flush();
+    expect(maxInFlight).toBe(1);
+    expect(ids().length).toBe(2 + 4 + 4);
+  });
+
+  it('does not extend with repeat on and resumes when repeat is off', async () => {
+    const more = vi.fn<RadioSource>(async () => batch('x', 5));
+    await t.player.setRepeat('all');
+    await t.player.playRadio(seed, more, 'Mix');
+    await flush();
+    expect(more).not.toHaveBeenCalled();
+    await t.player.setRepeat('off');
+    await flush();
+    expect(more).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops after two failures and reports once', async () => {
+    const more = vi.fn<RadioSource>(async () => {
+      throw new Error('nope');
+    });
+    await t.player.playRadio(seed, more, 'Mix');
+    await flush();
+    expect(t.player.radio).not.toBeNull();
+    await t.player.setRepeat('off');
+    await flush();
+    expect(more).toHaveBeenCalledTimes(2);
+    expect(t.player.radio).toBeNull();
+    expect(t.errors.message).toBeTruthy();
+    await t.player.setRepeat('off');
+    await flush();
+    expect(more).toHaveBeenCalledTimes(2);
+  });
+
+  it('an empty result counts as a failure', async () => {
+    const more = vi.fn<RadioSource>(async () => []);
+    await t.player.playRadio(seed, more, 'Mix');
+    await flush();
+    await t.player.setRepeat('off');
+    await flush();
+    expect(t.player.radio).toBeNull();
+  });
+
+  it('replacing the queue ends the radio; appending and reordering keep it', async () => {
+    const more = vi.fn<RadioSource>(async () => batch('x', 8));
+    await t.player.playRadio(seed, more, 'Mix');
+    await flush();
+    await t.player.addToQueue([track('z')]);
+    await t.player.reorder(1, 2);
+    expect(t.player.radio).not.toBeNull();
+    t.player.stopRadio();
+    expect(t.player.radio).toBeNull();
+    const before = ids().length;
+    for (const id of ids().slice(1, before - 1)) t.engine.trackStarted(id);
+    await flush();
+    expect(ids().length).toBe(before);
+    await t.player.playRadio(seed, more, 'Again');
+    await t.player.playQueue(batch('q', 2));
+    expect(t.player.radio).toBeNull();
+    await t.player.playRadio(seed, more, 'Again');
+    await t.player.clear();
+    expect(t.player.radio).toBeNull();
   });
 });

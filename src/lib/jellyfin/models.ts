@@ -412,6 +412,14 @@ export function willTranscode(item: BaseItem, cap: number | null): boolean {
   return false;
 }
 
+/** "Transcoded by server to FLAC 16/48" / "... to AAC (cap 192 kbps)". */
+export function transcodeLabel(codec: string | null, cap: number | null): string {
+  const lossless = codec === 'flac' && cap !== null && cap >= 1_411_000;
+  if (lossless) return 'Transcoded by server to FLAC 16/48';
+  const name = codec === 'flac' ? 'AAC' : codec?.toUpperCase();
+  return `Transcoded by server${name ? ` to ${name}` : ''} (cap ${kbps(cap ?? 0)})`;
+}
+
 // ----------------------------------------------------------------- formatting
 
 export function formatBytes(bytes: number): string {
@@ -461,9 +469,9 @@ export function formatLine(track: BaseItem | null, path: SignalPath | null): str
  */
 export function techInfoRows(
   track: BaseItem,
-  opts: { path?: SignalPath | null; maxBitrate?: number | null; downloaded?: boolean } = {},
+  opts: { path?: SignalPath | null; maxBitrate?: number | null; codec?: string | null; downloaded?: boolean } = {},
 ): [string, string][] {
-  const { path = null, maxBitrate = null, downloaded = false } = opts;
+  const { path = null, maxBitrate = null, codec = null, downloaded = false } = opts;
   const source = firstMediaSource(track);
   const stream = audioStream(track);
   const rows: [string, string][] = [];
@@ -500,7 +508,7 @@ export function techInfoRows(
     downloaded
       ? 'Downloaded file'
       : willTranscode(track, maxBitrate)
-        ? `Transcoded by server (cap ${kbps(maxBitrate ?? 0)})`
+        ? transcodeLabel(codec, maxBitrate)
         : 'Original file',
   );
   if (path) {

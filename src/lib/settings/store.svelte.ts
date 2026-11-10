@@ -23,6 +23,8 @@ import {
   DEFAULT_SETTINGS,
   DEFAULT_STREAMING,
   MAX_PREFETCH_TRACKS,
+  CACHE_LIMIT_MAX_MB,
+  CACHE_LIMIT_MIN_MB,
   START_SCREENS,
   TRANSCODE_CODECS,
   type AppearanceSettings,
@@ -37,7 +39,9 @@ import {
 
 export const SETTINGS_KEY = 'settings';
 
-export type SettingsEngine = Pick<Ipc, 'setOutput' | 'setDsp'>;
+const cacheBytes = (mb: number): number => mb * 1024 * 1024;
+
+export type SettingsEngine = Pick<Ipc, 'setOutput' | 'setDsp' | 'cacheSetLimit' | 'cacheStats' | 'cacheClear'>;
 
 // ----------------------------------------------------------------- parsing
 
@@ -167,6 +171,7 @@ export function parseStreaming(j: unknown): StreamingSettings {
     codec: enumOf(TRANSCODE_CODECS, o.codec, d.codec),
     adaptive: bool(o.adaptive, d.adaptive),
     prefetchTracks: Math.trunc(clampNum(o.prefetchTracks, 0, MAX_PREFETCH_TRACKS, d.prefetchTracks)),
+    cacheLimitMb: Math.trunc(clampNum(o.cacheLimitMb, CACHE_LIMIT_MIN_MB, CACHE_LIMIT_MAX_MB, d.cacheLimitMb)),
   };
 }
 
@@ -260,7 +265,18 @@ export class SettingsStore {
     await this.errors.guard(async () => {
       await this.engine.setOutput(s.outputDeviceId, s.exclusive);
       await this.engine.setDsp(s.dsp);
+      await this.engine.cacheSetLimit(cacheBytes(s.streaming.cacheLimitMb));
     });
+  }
+
+  /** Stream-cache usage reported by the engine. */
+  cacheStats() {
+    return this.engine.cacheStats();
+  }
+
+  /** Empties the stream cache (offline downloads are separate files). */
+  clearCache() {
+    return this.engine.cacheClear();
   }
 
   /**
@@ -286,7 +302,12 @@ export class SettingsStore {
   }
 
   async updateStreaming(change: Change<StreamingSettings>): Promise<void> {
+    const prevLimit = this.current.streaming.cacheLimitMb;
     this.set({ ...this.current, streaming: parseStreaming(applyChange(this.current.streaming, change)) });
+    const limit = this.current.streaming.cacheLimitMb;
+    if (limit !== prevLimit) {
+      await this.errors.guard(() => this.engine.cacheSetLimit(cacheBytes(limit)));
+    }
     this.save();
   }
 

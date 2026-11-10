@@ -66,6 +66,18 @@ describe('JellyfinClient', () => {
     expect(client.streamUrl('x', { codec: 'aac' })).toBe('https://jf.test/Audio/x/stream?static=true');
   });
 
+  it('asks for lossless CD quality with the flac codec', () => {
+    const client = fakeClient(new FakeHttp());
+    const u = new URL(client.streamUrl('x', { maxBitrate: 1_411_000, codec: 'flac' }));
+    expect(u.searchParams.get('AudioCodec')).toBe('flac');
+    expect(u.searchParams.get('TranscodingContainer')).toBe('flac');
+    expect(u.searchParams.get('MaxAudioSampleRate')).toBe('48000');
+    expect(u.searchParams.get('MaxAudioBitDepth')).toBe('16');
+    expect(u.searchParams.get('MaxStreamingBitrate')).toBe('1411000');
+    const aac = new URL(client.streamUrl('x', { maxBitrate: 96000, codec: 'aac' }));
+    expect(aac.searchParams.has('MaxAudioBitDepth')).toBe(false);
+  });
+
   it('image, download URLs and auth headers', () => {
     const client = fakeClient(new FakeHttp());
     expect(client.imageUrl('i1', { maxWidth: 300, tag: 'tg' })).toBe(

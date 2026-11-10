@@ -17,10 +17,20 @@ import {
   willTranscode,
   type BaseItem,
 } from '../jellyfin/models';
-import type { AppSettings } from '../settings/types';
+import type { AppSettings, TranscodeCodec } from '../settings/types';
 import type { TrackMeta } from '../track-meta';
 import { effectiveMaxBitrate, ewma } from './adaptive';
 import type { EngineErrors } from './errors.svelte';
+
+/** Fetches more tracks for a radio from the most recently played ones. */
+export type RadioSource = (recent: BaseItem[]) => Promise<BaseItem[]>;
+
+/** Tracks left after the current one at or below which a radio asks for more. */
+const RADIO_LOW_WATER = 3;
+const RADIO_RECENT = 50;
+
+/** Cap (bits/s) from which lossless FLAC (16-bit / 48 kHz) fits. */
+export const FLAC_MIN_CAP = 1_411_000;
 
 export type RepeatMode = 'off' | 'all' | 'one';
 const REPEAT_ORDER: readonly RepeatMode[] = ['off', 'all', 'one'];
@@ -108,6 +118,12 @@ export class PlayerController {
     return this.repeat === 'all' ? 0 : null;
   });
 
+  /** Active radio (auto-extending queue), or null. */
+  radio = $state.raw<{ label: string } | null>(null);
+  private radioSource: RadioSource | null = null;
+  private radioBusy = false;
+  private radioFailures = 0;
+
   private readonly deps: PlayerDeps;
   /**
    * Bitrate cap for upcoming tracks: the user's cap, lowered by the measured
@@ -160,6 +176,14 @@ export class PlayerController {
     });
   }
 
+  /** The codec of the URL: FLAC only while the effective cap leaves room for CD quality. */
+  private streamCodec(): TranscodeCodec {
+    const codec = this.deps.settings.current.streaming.codec;
+    if (codec !== 'flac') return codec;
+    const cap = this.effectiveMaxBitrate;
+    return cap !== null && cap >= FLAC_MIN_CAP ? 'flac' : 'aac';
+  }
+
   private effectiveCap(s: AppSettings, throughput = this.throughputBps): number | null {
     return effectiveMaxBitrate(s.maxBitrate, s.streaming.adaptive, throughput);
   }
@@ -207,6 +231,7 @@ export class PlayerController {
     opts: { startIndex?: number; shuffle?: boolean } = {},
   ): Promise<void> {
     if (tracks.length === 0) return Promise.resolve();
+    this.endRadio();
     const entries = tracks.map((item) => this.entry(item));
     const shuf = opts.shuffle ?? this.shuffle;
     const start = clamp(opts.startIndex ?? 0, 0, entries.length - 1);
@@ -238,6 +263,73 @@ export class PlayerController {
   }
 
   /**
+   * Plays `seed` and keeps the queue topped up with `more(recent)` while
+   * repeat is off. Any call that replaces the queue ends the radio.
+   */
+  playRadio(seed: BaseItem[], more: RadioSource, label: string): Promise<void> {
+    if (seed.length === 0) return Promise.resolve();
+    const started = this.playQueue(seed, { startIndex: 0 });
+    this.radio = { label };
+    this.radioSource = more;
+    this.radioFailures = 0;
+    this.maybeExtendRadio();
+    return started;
+  }
+
+  /** Keeps the queue, stops extending it. */
+  stopRadio(): void {
+    this.endRadio();
+  }
+
+  private endRadio(): void {
+    this.radio = null;
+    this.radioSource = null;
+    this.radioFailures = 0;
+  }
+
+  private maybeExtendRadio(): void {
+    const more = this.radioSource;
+    if (!more || this.radioBusy || this.repeat !== 'off') return;
+    if (this.index < 0 || this.queue.length - 1 - this.index > RADIO_LOW_WATER) return;
+    const recent = this.queue
+      .slice(Math.max(0, this.index + 1 - RADIO_RECENT), this.index + 1)
+      .map((e) => e.item);
+    this.radioBusy = true;
+    void (async () => {
+      let fresh: BaseItem[] = [];
+      let failed = false;
+      try {
+        const got = await more(recent);
+        const have = new Set(this.queue.map((e) => e.item.id));
+        for (const item of got) {
+          if (have.has(item.id)) continue;
+          have.add(item.id);
+          fresh.push(item);
+        }
+        failed = fresh.length === 0;
+      } catch {
+        failed = true;
+        fresh = [];
+      }
+      this.radioBusy = false;
+      if (this.radioSource !== more) return; // radio ended or replaced meanwhile
+      if (failed) {
+        this.radioFailures += 1;
+        if (this.radioFailures >= 2) {
+          this.endRadio();
+          this.deps.errors.report('Radio could not find more tracks and stopped.');
+        }
+        return;
+      }
+      this.radioFailures = 0;
+      const entries = fresh.map((item) => this.entry(item));
+      this.original = [...this.original, ...entries];
+      this.queue = [...this.queue, ...entries];
+      void this.armNext();
+    })();
+  }
+
+  /**
    * Puts a saved queue back without starting audio: the engine is untouched,
    * the first play() loads the track and seeks to `positionMs`.
    */
@@ -249,6 +341,7 @@ export class PlayerController {
     repeat: RepeatMode;
   }): void {
     if (snap.items.length === 0) return;
+    this.endRadio();
     const entries = snap.items.map((item) => this.entry(item));
     const index = clamp(snap.index, 0, entries.length - 1);
     this.original = entries;
@@ -423,6 +516,7 @@ export class PlayerController {
   }
 
   stop(): Promise<void> {
+    this.endRadio();
     this.reportStopped();
     this.playback = 'stopped';
     this.positionMs = 0;
@@ -432,6 +526,7 @@ export class PlayerController {
 
   /** Stops playback and empties the queue (used when switching profiles). */
   clear(): Promise<void> {
+    this.endRadio();
     this.reportStopped();
     this.original = [];
     this.queue = [];
@@ -497,7 +592,7 @@ export class PlayerController {
       entryId,
       url: client.streamUrl(item.id, {
         maxBitrate: this.effectiveMaxBitrate,
-        codec: this.deps.settings.current.streaming.codec,
+        codec: this.streamCodec(),
       }),
       headers: client.authHeaders(),
       // A fully downloaded original always wins over streaming.
@@ -526,6 +621,7 @@ export class PlayerController {
     const next = this.nextRequest();
     const ahead = this.prefetchRequests();
     this.lastPrefetchKey = prefetchKey(ahead);
+    this.maybeExtendRadio();
     return this.run(async () => {
       await this.deps.engine.load(request, startPlaying);
       await this.deps.engine.setNext(next);
@@ -544,6 +640,7 @@ export class PlayerController {
     const request = this.nextRequest();
     const done = this.run(() => this.deps.engine.setNext(request));
     void this.syncPrefetch();
+    this.maybeExtendRadio();
     return done;
   }
 
@@ -638,6 +735,9 @@ export class PlayerController {
         // player's, so listeners (scrobbling, Discord) must not see it.
         return;
       }
+      case 'fetchProgress':
+        // Cache progress of one download, not playback (see 'throughput').
+        return;
       case 'signalPathChanged':
         this.signalPath = e.signalPath;
         break;

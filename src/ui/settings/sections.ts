@@ -15,6 +15,7 @@ export const SECTIONS: SectionInfo[] = [
   { id: 'eq', label: 'Equalizer', keywords: 'eq parametric autoeq band filter headphones peak shelf' },
   { id: 'processing', label: 'Processing', keywords: 'dsp convolution impulse response crossfeed compressor dynamics loudness resample dither crossfade gapless bit-perfect' },
   { id: 'streaming', label: 'Streaming', keywords: 'bitrate transcode quality dsd dop pcm' },
+  { id: 'cache', label: 'Cache', keywords: 'stream cache clear storage disk size limit' },
   { id: 'scrobbling', label: 'Scrobbling', keywords: 'listenbrainz last.fm lastfm scrobble history token' },
   { id: 'discord', label: 'Discord', keywords: 'rich presence activity application id status' },
   { id: 'about', label: 'About', keywords: 'version shortcuts keyboard help rayla' },

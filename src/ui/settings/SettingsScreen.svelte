@@ -5,6 +5,7 @@
   import AboutSection from './AboutSection.svelte';
   import AppearanceSection from './AppearanceSection.svelte';
   import BehaviorSection from './BehaviorSection.svelte';
+  import CacheSection from './CacheSection.svelte';
   import DiscordSection from './DiscordSection.svelte';
   import EqSection from './EqSection.svelte';
   import GainSection from './GainSection.svelte';
@@ -75,6 +76,7 @@
       {#if shown('eq')}<EqSection />{/if}
       {#if shown('processing')}<ProcessingSection />{/if}
       {#if shown('streaming')}<StreamingSection />{/if}
+      {#if shown('cache')}<CacheSection />{/if}
       {#if shown('scrobbling')}<ScrobbleSection />{/if}
       {#if shown('discord')}<DiscordSection />{/if}
       {#if shown('about')}<AboutSection />{/if}

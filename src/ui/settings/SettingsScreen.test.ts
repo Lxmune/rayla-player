@@ -54,6 +54,25 @@ describe('SettingsScreen', () => {
     expect(app.core.settings.current.exclusive).toBe(true);
   });
 
+  it('cache section shows usage, sets the limit and clears with confirmation', async () => {
+    const { app, engine, context } = buildApp();
+    render(SettingsScreen, { context });
+    await flush();
+    expect(screen.getByText(/Stream cache: .* of .*/)).toBeTruthy();
+    await fireEvent.change(screen.getByLabelText(/Cache size limit/), { target: { value: '5120' } });
+    expect(app.core.settings.current.streaming.cacheLimitMb).toBe(5120);
+    expect(engine.cacheLimitBytes).toBe(5120 * 1024 * 1024);
+  });
+
+  it('offers the CD bitrate and FLAC codec', async () => {
+    const { app, context } = buildApp();
+    render(SettingsScreen, { context });
+    await fireEvent.change(screen.getByLabelText(/Bitrate cap/), { target: { value: '1411000' } });
+    expect(app.core.settings.current.maxBitrate).toBe(1_411_000);
+    await fireEvent.change(screen.getByLabelText(/Transcode format/), { target: { value: 'flac' } });
+    expect(app.core.settings.current.streaming.codec).toBe('flac');
+  });
+
   it('bitrate cap writes bits per second', async () => {
     const { app, context } = buildApp();
     render(SettingsScreen, { context });

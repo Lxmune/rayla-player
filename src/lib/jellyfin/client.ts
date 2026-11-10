@@ -547,6 +547,8 @@ export class JellyfinClient {
       TranscodingContainer: codec,
       TranscodingProtocol: 'http',
       AudioCodec: codec,
+      // Lossless CD quality: sources above it are reduced to 16-bit / 48 kHz.
+      ...(codec === 'flac' ? { MaxAudioSampleRate: 48000, MaxAudioBitDepth: 16 } : {}),
     });
   }
 

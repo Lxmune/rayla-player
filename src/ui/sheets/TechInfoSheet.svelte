@@ -15,6 +15,7 @@
     ...techInfoRows(item, {
       path,
       maxBitrate: core.player.effectiveMaxBitrate,
+      codec: core.settings.current.streaming.codec,
       downloaded: core.downloads.pathFor(item.id) !== null,
     }),
     ['Item ID', item.id] as [string, string],

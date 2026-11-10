@@ -187,13 +187,24 @@ describe('SettingsStore', () => {
 
   it('parses streaming settings, clamps prefetch and persists updates', async () => {
     expect(loadSettings(JSON.stringify({ maxBitrate: 128000 })).streaming).toEqual({
-      codec: 'aac', adaptive: false, prefetchTracks: 2,
+      codec: 'aac', adaptive: false, prefetchTracks: 2, cacheLimitMb: 3072,
     });
     const odd = loadSettings(JSON.stringify({ streaming: { codec: 'ogg', adaptive: true, prefetchTracks: 99.7 } }));
-    expect(odd.streaming).toEqual({ codec: 'aac', adaptive: true, prefetchTracks: 5 });
+    expect(odd.streaming).toEqual({ codec: 'aac', adaptive: true, prefetchTracks: 5, cacheLimitMb: 3072 });
     expect(parseSettings({ streaming: { prefetchTracks: -3 } }).streaming.prefetchTracks).toBe(0);
     const { store, kv } = make();
     await store.updateStreaming({ codec: 'mp3', prefetchTracks: 4 });
-    expect(loadSettings(kv.get(SETTINGS_KEY)).streaming).toEqual({ codec: 'mp3', adaptive: false, prefetchTracks: 4 });
+    expect(loadSettings(kv.get(SETTINGS_KEY)).streaming).toEqual({ codec: 'mp3', adaptive: false, prefetchTracks: 4, cacheLimitMb: 3072 });
+  });
+
+  it('pushes the cache limit to the engine at startup and on change', async () => {
+    const { store, engine } = make();
+    await store.pushToEngine();
+    expect(engine.cacheLimitBytes).toBe(3072 * 1024 * 1024);
+    await store.updateStreaming({ cacheLimitMb: 512 });
+    expect(engine.cacheLimitBytes).toBe(512 * 1024 * 1024);
+    engine.cacheLimitBytes = null;
+    await store.updateStreaming({ prefetchTracks: 1 });
+    expect(engine.cacheLimitBytes).toBeNull();
   });
 });

@@ -17,6 +17,7 @@ import {
   parseLyrics,
   lyricsIsEmpty,
   techInfoRows,
+  transcodeLabel,
   toTrackMeta,
   willTranscode,
   type LyricLine,
@@ -283,5 +284,14 @@ describe('formatting and tech info', () => {
     expect(r['Processing']).toBe('ReplayGain -6.2 dB');
     expect(r['Bit-perfect']).toBe('No');
     expect(Object.keys(rows(parseBaseItem({ Id: 'x', Type: 'Audio' })))).toEqual(['Source']);
+  });
+});
+
+describe('transcodeLabel', () => {
+  it('names the target format', () => {
+    expect(transcodeLabel('flac', 1_411_000)).toBe('Transcoded by server to FLAC 16/48');
+    expect(transcodeLabel('flac', 192_000)).toBe('Transcoded by server to AAC (cap 192 kbps)');
+    expect(transcodeLabel('mp3', 128_000)).toBe('Transcoded by server to MP3 (cap 128 kbps)');
+    expect(transcodeLabel(null, 128_000)).toBe('Transcoded by server (cap 128 kbps)');
   });
 });
