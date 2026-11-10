@@ -25,6 +25,7 @@
   import { useActions } from '../common/actions';
   import NowPlaying from '../now-playing/NowPlaying.svelte';
   import PlayerBar from './PlayerBar.svelte';
+  import BottomNav from './BottomNav.svelte';
   import QueueDrawer from './QueueDrawer.svelte';
   import Sidebar from './Sidebar.svelte';
   import TopBar from './TopBar.svelte';
@@ -208,6 +209,7 @@
     {/if}
   </div>
   <PlayerBar />
+  <BottomNav />
 
   {#if ui.nowPlayingOpen}
     <NowPlaying />
@@ -238,6 +240,9 @@
     display: flex;
     flex-direction: column;
     height: 100vh;
+    height: 100dvh;
+    /* Edge-to-edge on Android/iOS: keep clear of the status bar / notch. */
+    padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) 0 env(safe-area-inset-left, 0px);
     background: var(--bg);
   }
   .main-row {

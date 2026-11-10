@@ -130,6 +130,14 @@
   --skeleton-shine: rgb(0 0 0 / 0.09);
 }
 
+@media (max-width: 640px) {
+  :root {
+    --gutter: var(--space-4);
+    --card-min: 136px;
+    --grid-gap: var(--space-3);
+  }
+}
+
 :root[data-density='compact'] {
   --row-height: 40px;
   --card-min: 136px;

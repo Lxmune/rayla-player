@@ -158,6 +158,8 @@
     background: linear-gradient(160deg, color-mix(in srgb, var(--accent) 14%, var(--bg)), var(--bg) 60%);
     transition: background var(--accent-transition);
     animation: slide-up var(--duration-slow) var(--ease-out);
+    padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px)
+      env(safe-area-inset-left, 0px);
   }
   .top,
   .layout {

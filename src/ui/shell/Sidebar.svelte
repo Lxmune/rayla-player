@@ -177,6 +177,12 @@
     transition: width var(--duration) var(--ease-out);
     overflow: hidden;
   }
+  @media (max-width: 640px) {
+    /* Phones use BottomNav instead. */
+    .side {
+      display: none;
+    }
+  }
   .side.collapsed {
     width: var(--sidebar-collapsed);
   }

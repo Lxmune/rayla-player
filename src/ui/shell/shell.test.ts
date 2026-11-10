@@ -1,5 +1,5 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/svelte';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { APP_CONTEXT_KEY } from '../../lib/app.svelte';
 import { parseBaseItem } from '../../lib/jellyfin/models';
 import { flush, trackJson } from '../../lib/test-support';
@@ -7,7 +7,10 @@ import { signedIn } from '../testing';
 import Shell from './Shell.svelte';
 
 beforeEach(() => localStorage.clear());
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 const items = (...ts: Record<string, unknown>[]) => ({ Items: ts, TotalRecordCount: ts.length, StartIndex: 0 });
 const mount = async (routes: Record<string, unknown> = {}) => {
@@ -66,5 +69,23 @@ describe('Shell chrome', () => {
     await mount();
     await fireEvent.keyDown(document.body, { key: '?', shiftKey: true });
     expect(screen.getByRole('dialog', { name: 'Keyboard shortcuts' })).toBeTruthy();
+  });
+
+  it('shows bottom tabs at phone width, with the other sections under More', async () => {
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: true,
+      media: query,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    }));
+    await mount();
+    const tabs = screen.getAllByRole('navigation', { name: 'Main' }).find((n) => n.classList.contains('tabs'));
+    expect(tabs).toBeTruthy();
+    const bar = within(tabs!);
+    expect(bar.getByRole('button', { name: 'Home' }).getAttribute('aria-current')).toBe('page');
+    await fireEvent.click(bar.getByRole('button', { name: 'More' }));
+    await fireEvent.click(screen.getByRole('menuitem', { name: 'Playlists' }));
+    expect(bar.getByRole('button', { name: 'More' }).classList.contains('on')).toBe(true);
+    expect(bar.getByRole('button', { name: 'Home' }).hasAttribute('aria-current')).toBe(false);
   });
 });
