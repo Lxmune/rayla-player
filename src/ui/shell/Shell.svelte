@@ -21,12 +21,14 @@
   import ContextMenu from '../common/ContextMenu.svelte';
   import Toasts from '../common/Toasts.svelte';
   import AccountSheet from '../login/AccountSheet.svelte';
-  import IconButton from '../common/IconButton.svelte';
   import Sheet from '../common/Sheet.svelte';
   import { useActions } from '../common/actions';
   import NowPlaying from '../now-playing/NowPlaying.svelte';
   import PlayerBar from './PlayerBar.svelte';
+  import QueueDrawer from './QueueDrawer.svelte';
   import Sidebar from './Sidebar.svelte';
+  import TopBar from './TopBar.svelte';
+  import { shortcutFor, type ShortcutAction } from './shortcuts';
   import {
     Router,
     UiState,
@@ -55,32 +57,118 @@
     });
   });
 
-  /** Space toggles playback unless the user is typing or on a control that uses Space itself. */
-  function onkeydown(e: KeyboardEvent) {
-    if (e.key !== ' ' && e.code !== 'Space') return;
-    if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
-    const t = e.target;
-    if (t instanceof HTMLElement) {
-      if (t.isContentEditable) return;
-      if (['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON', 'A'].includes(t.tagName)) return;
-      if (t.getAttribute('role') === 'tab') return;
+  let scroller: HTMLElement | undefined = $state();
+  let topbar: { focusSearch: () => void } | undefined = $state();
+  let scrolled = $state(false);
+  let lastVolume = 1;
+
+  // Every navigation starts at the top of the page.
+  $effect(() => {
+    void route;
+    if (scroller) scroller.scrollTop = 0;
+    scrolled = false;
+  });
+
+  const isTyping = (t: EventTarget | null) =>
+    t instanceof HTMLElement &&
+    (t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName));
+
+  /** Controls that use Space (and the arrow keys) themselves. */
+  const isControl = (t: EventTarget | null) =>
+    t instanceof HTMLElement &&
+    (['BUTTON', 'A'].includes(t.tagName) || ['tab', 'slider'].includes(t.getAttribute('role') ?? ''));
+
+  function run(action: ShortcutAction) {
+    const player = app.core.player;
+    const guard = actions.guard;
+    switch (action) {
+      case 'playPause':
+        return void guard(() => player.togglePlay());
+      case 'next':
+        return void guard(() => player.next());
+      case 'previous':
+        return void guard(() => player.previous());
+      case 'seekForward':
+      case 'seekBack': {
+        if (!player.current) return;
+        const to = player.positionMs + (action === 'seekForward' ? 10_000 : -10_000);
+        const max = player.durationMs > 0 ? player.durationMs : Number.MAX_SAFE_INTEGER;
+        return void guard(() => player.seek(Math.min(max, Math.max(0, to))));
+      }
+      case 'volumeUp':
+      case 'volumeDown': {
+        const v = app.core.settings.current.dsp.volume + (action === 'volumeUp' ? 0.05 : -0.05);
+        return void actions.setVolume(Math.round(Math.min(1, Math.max(0, v)) * 100) / 100);
+      }
+      case 'mute': {
+        const v = app.core.settings.current.dsp.volume;
+        if (v > 0) lastVolume = v;
+        return void actions.setVolume(v > 0 ? 0 : lastVolume);
+      }
+      case 'shuffle':
+        return void guard(() => player.toggleShuffle());
+      case 'repeat':
+        return void guard(() => player.cycleRepeat());
+      case 'favorite':
+        if (player.current) void actions.toggleFavorite(player.current);
+        return;
+      case 'search':
+        return topbar?.focusSearch();
+      case 'back':
+        return router.back();
+      case 'forward':
+        return router.forward();
+      case 'queue':
+        ui.queueOpen = !ui.queueOpen;
+        return;
+      case 'nowPlaying':
+        ui.nowPlayingOpen = !ui.nowPlayingOpen;
+        return;
+      case 'help':
+        ui.sheet = { kind: 'shortcuts' };
+        return;
     }
-    if (ui.sheet !== null) return;
+  }
+
+  function onkeydown(e: KeyboardEvent) {
+    if (e.defaultPrevented || ui.sheet !== null || ui.menu !== null) return;
+    const action = shortcutFor(e);
+    if (!action) return;
+    const t = e.target;
+    if (isTyping(t)) {
+      if (action !== 'search' || !(e.ctrlKey || e.metaKey)) return;
+    } else if (isControl(t)) {
+      if (action === 'playPause') return;
+      if (t instanceof HTMLElement && t.getAttribute('role') === 'slider' && e.key.startsWith('Arrow')) return;
+    }
     e.preventDefault();
-    void actions.guard(() => app.core.player.togglePlay());
+    run(action);
+  }
+
+  /** Mouse back / forward buttons. */
+  function onmouseup(e: MouseEvent) {
+    if (e.button !== 3 && e.button !== 4) return;
+    e.preventDefault();
+    if (e.button === 3) router.back();
+    else router.forward();
   }
 </script>
 
-<svelte:window {onkeydown} />
+<svelte:window {onkeydown} {onmouseup} />
 
 <div class="shell">
   <div class="main-row">
     <Sidebar />
-    <main class="content">
-      {#if router.canBack}
-        <div class="back"><IconButton icon="back" label="Back" onclick={() => router.back()} /></div>
-      {/if}
-      {#key route}
+    <div class="column">
+      <div
+        class="scroller"
+        bind:this={scroller}
+        onscroll={() => (scrolled = (scroller?.scrollTop ?? 0) > 4)}
+      >
+        <TopBar bind:this={topbar} {scrolled} />
+        <main class="content">
+          {#key route}
+            <div class="page">
         {#if route.name === 'home'}
           <HomeScreen />
         {:else if route.name === 'artists'}
@@ -110,8 +198,14 @@
         {:else if route.name === 'genre'}
           <GenreScreen item={route.item} />
         {/if}
-      {/key}
-    </main>
+            </div>
+          {/key}
+        </main>
+      </div>
+    </div>
+    {#if ui.queueOpen}
+      <QueueDrawer />
+    {/if}
   </div>
   <PlayerBar />
 
@@ -144,19 +238,31 @@
     display: flex;
     flex-direction: column;
     height: 100vh;
+    background: var(--bg);
   }
   .main-row {
+    position: relative;
     flex: 1;
     min-height: 0;
     display: flex;
   }
-  .content {
+  .column {
     flex: 1;
     min-width: 0;
-    overflow-y: auto;
-    padding: var(--space-5);
+    display: flex;
+    flex-direction: column;
   }
-  .back {
-    margin: calc(-1 * var(--space-2)) 0 var(--space-2) calc(-1 * var(--space-2));
+  .scroller {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+  }
+  .content {
+    max-width: var(--content-max);
+    margin: 0 auto;
+    padding: var(--space-4) var(--gutter) var(--space-6);
+  }
+  .page {
+    animation: rise-in var(--duration-slow) var(--ease-out);
   }
 </style>

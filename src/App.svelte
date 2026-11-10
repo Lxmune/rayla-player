@@ -27,7 +27,7 @@
   {/if}
   <div class="body">
     {#if !core.sessions.loaded}
-      <p class="boot" aria-busy="true">Rayla</p>
+      <div class="boot" aria-busy="true"><span class="word">Rayla</span></div>
     {:else if core.sessions.client === null}
       <LoginScreen />
     {:else}
@@ -48,7 +48,25 @@
     overflow: auto;
   }
   .boot {
-    padding: var(--space-5);
+    height: 100%;
+    display: grid;
+    place-items: center;
+  }
+  .word {
+    font-family: var(--font-display);
+    font-size: var(--text-xl);
+    font-weight: var(--weight-bold);
+    letter-spacing: var(--tracking-tight);
     color: var(--text-muted);
+    animation: boot-pulse 1.6s var(--ease-in-out) infinite;
+  }
+  @keyframes boot-pulse {
+    0%,
+    100% {
+      opacity: 0.35;
+    }
+    50% {
+      opacity: 1;
+    }
   }
 </style>

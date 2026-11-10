@@ -61,7 +61,7 @@
   .overlay {
     position: fixed;
     inset: 0;
-    z-index: 100;
+    z-index: var(--z-sheet);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -72,7 +72,9 @@
     inset: 0;
     border: 0;
     background: var(--scrim);
+    backdrop-filter: blur(4px);
     cursor: default;
+    animation: fade-in var(--duration) var(--ease-out);
   }
   .sheet {
     position: relative;
@@ -82,23 +84,28 @@
     max-height: min(720px, 100%);
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
+    border-radius: var(--radius-xl);
+    box-shadow: var(--shadow-3);
     overflow: hidden;
+    animation: scale-in var(--duration) var(--ease-out);
   }
   header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: var(--space-3) var(--space-4);
-    border-bottom: 1px solid var(--border);
+    padding: var(--space-3) var(--space-4) var(--space-3) var(--space-5);
+    background: var(--glass);
+    backdrop-filter: blur(16px);
+    border-bottom: 1px solid var(--glass-border);
   }
   h2 {
     margin: 0;
     font-size: var(--text-lg);
-    font-weight: 600;
+    font-weight: var(--weight-semibold);
+    letter-spacing: var(--tracking-tight);
   }
   .body {
-    padding: var(--space-4);
+    padding: var(--space-4) var(--space-5) var(--space-5);
     overflow-y: auto;
   }
 </style>
