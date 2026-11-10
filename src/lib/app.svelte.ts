@@ -5,18 +5,22 @@
 import { getContext, setContext } from 'svelte';
 import { createCore, createProductionCore, type Core, type CoreDeps } from './core.svelte';
 import { isAndroid, clearNowPlaying, onMediaAction, updateNowPlaying } from './android';
+import { desktopMediaBridge, isDesktop } from './desktop-media';
 import { imageItemId } from './jellyfin/models';
 import { MediaSession, type MediaBridge } from './integrations/media-session';
 import { ipc } from './ipc';
 import { httpFetch, localKv, type HttpFetch, type KeyValueStore } from './platform';
 import type { Secrets } from './jellyfin/session.svelte';
 import { IntegrationCredentials, createScrobbleService } from './integrations/credentials.svelte';
+import { SkipTracker } from './recommend/skips.svelte';
 import { DiscordPresence, type PresenceObservation, type SetActivity } from './integrations/discord-presence';
 
 export interface RaylaApp {
   core: Core;
   /** ListenBrainz / Last.fm credentials (OS keychain). */
   credentials: IntegrationCredentials;
+  /** Learns which tracks the user skips (feeds Discover and radio). */
+  skips: SkipTracker;
   /** Starts the core, loads credentials, flushes pending scrobbles. Never rejects. */
   start(): Promise<void>;
   dispose(): Promise<void>;
@@ -28,7 +32,10 @@ export interface IntegrationDeps {
   secrets: Secrets;
   setActivity: SetActivity;
   clock?: () => number;
-  /** Android media session switch / bridge; defaults to `isAndroid` and the real plugin. */
+  /**
+   * OS media session switch / bridge: the rayla-android plugin on Android, desktop media
+   * controls (SMTC / Now Playing / MPRIS) in the desktop shell, off elsewhere (tests, browser).
+   */
   android?: { enabled: boolean; bridge: MediaBridge };
 }
 
@@ -39,6 +46,12 @@ export function createApp(core: Core, deps: IntegrationDeps): RaylaApp {
     kv: deps.kv,
     credentials,
     toggles: () => core.settings.current,
+    clock: deps.clock,
+  });
+  const skips = new SkipTracker({
+    kv: deps.kv,
+    profileId: () => core.sessions.activeId,
+    queue: () => core.player.queue,
     clock: deps.clock,
   });
   const presence = new DiscordPresence(deps.setActivity, deps.clock);
@@ -52,6 +65,7 @@ export function createApp(core: Core, deps: IntegrationDeps): RaylaApp {
   return {
     core,
     credentials,
+    skips,
     async start() {
       await core.start();
       try {
@@ -70,6 +84,7 @@ export function createApp(core: Core, deps: IntegrationDeps): RaylaApp {
             // Engine events carry a path only on signalPathChanged; use the tracked one.
             signalPath: core.player.signalPath,
           };
+          skips.observe(e);
           void scrobble.tracker.observe({ ...last, playing: e.state === 'playing' });
           observePresence();
         }),
@@ -77,10 +92,11 @@ export function createApp(core: Core, deps: IntegrationDeps): RaylaApp {
           if (s.discord !== prev.discord) observePresence();
         }),
       );
-      const android = deps.android ?? {
-        enabled: isAndroid,
-        bridge: { updateNowPlaying, clearNowPlaying, onMediaAction },
-      };
+      const android =
+        deps.android ??
+        (isAndroid
+          ? { enabled: true, bridge: { updateNowPlaying, clearNowPlaying, onMediaAction } }
+          : { enabled: isDesktop, bridge: desktopMediaBridge });
       if (android.enabled) {
         const session = new MediaSession({
           player: core.player,
