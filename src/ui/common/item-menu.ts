@@ -4,6 +4,7 @@
 
 import { getContext } from 'svelte';
 import { getApp } from '../../lib/app.svelte';
+import { invalidateRecommendations } from '../../lib/recommend/recommender';
 import type { BaseItem } from '../../lib/jellyfin/models';
 import { ROUTER_KEY, UI_KEY, type MenuEntry, type Router, type UiState } from '../shell/router.svelte';
 import { useActions } from './actions';
@@ -113,6 +114,24 @@ export function useItemMenu(): (item: BaseItem, opts?: ItemMenuOptions) => MenuE
         label: favorite ? 'Remove from favorites' : 'Add to favorites',
         icon: favorite ? 'heartFill' : 'heart',
         onselect: () => void actions.toggleFavorite(item),
+      });
+    }
+    if (isTrack || item.type === 'MusicAlbum' || item.type === 'MusicArtist') {
+      entries.push({
+        label: 'Not interested',
+        icon: 'ban',
+        onselect: () => {
+          app.skips.dislike(item);
+          const client = app.core.sessions.client;
+          if (client) invalidateRecommendations(client);
+          ui?.toast(`Won't recommend “${item.name}” again`, {
+            label: 'Undo',
+            run: () => {
+              app.skips.undislike(item.id);
+              if (client) invalidateRecommendations(client);
+            },
+          });
+        },
       });
     }
     if (isTrack) {

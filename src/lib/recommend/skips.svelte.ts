@@ -11,7 +11,15 @@ export const MAX_SKIPS = 500;
 export const SKIP_MAX_MS = 30_000;
 export const SKIP_MAX_SHARE = 0.4;
 
+export const MAX_DISLIKES = 2000;
+
 export const skipsKey = (profileId: string) => `recommend.skips.${profileId}`;
+export const dislikesKey = (profileId: string) => `recommend.dislikes.${profileId}`;
+
+const validRecord = (r: unknown): r is SkipRecord =>
+  typeof r === 'object' && r !== null && typeof (r as SkipRecord).id === 'string' &&
+  typeof (r as SkipRecord).at === 'number' && Array.isArray((r as SkipRecord).artists) &&
+  Array.isArray((r as SkipRecord).genres);
 
 export interface SkipTrackerDeps {
   kv: KeyValueStore;
@@ -24,17 +32,21 @@ export interface SkipTrackerDeps {
 const key = (s: string) => s.trim().toLowerCase();
 
 export function toSkipRecord(item: BaseItem, at: number): SkipRecord {
+  // An artist item is its own artist (it has no credited artists).
+  const artists = item.type === 'MusicArtist' ? [{ id: item.id, name: item.name }] : artistsOf(item);
   return {
     id: item.id,
-    artists: artistsOf(item).map((a) => key(a.name)).filter((k) => k !== ''),
+    artists: artists.map((a) => key(a.name)).filter((k) => k !== ''),
     genres: item.genres.map((g) => key(g.name)).filter((k) => k !== ''),
     at,
+    ...(item.type !== 'Audio' ? { kind: item.type } : {}),
   };
 }
 
 export class SkipTracker {
   private cur: { uid: number; item: BaseItem; posMs: number; durMs: number; ended: boolean } | null = null;
   private records: SkipRecord[] = [];
+  private dislikes: SkipRecord[] = [];
   private loadedFor: string | null = null;
   /** Bumped on every change so reactive readers can depend on it. */
   version = $state(0);
@@ -47,20 +59,18 @@ export class SkipTracker {
     const id = this.deps.profileId();
     if (id === this.loadedFor) return;
     this.loadedFor = id;
-    this.records = [];
-    if (id === null) return;
+    this.records = this.read(skipsKey, id);
+    this.dislikes = this.read(dislikesKey, id);
+  }
+
+  private read(keyFn: (id: string) => string, id: string | null): SkipRecord[] {
+    if (id === null) return [];
     try {
-      const raw = this.deps.kv.get(skipsKey(id));
+      const raw = this.deps.kv.get(keyFn(id));
       const parsed: unknown = raw === null ? [] : JSON.parse(raw);
-      if (Array.isArray(parsed)) {
-        this.records = parsed.filter(
-          (r): r is SkipRecord =>
-            typeof r === 'object' && r !== null && typeof r.id === 'string' && typeof r.at === 'number' &&
-            Array.isArray(r.artists) && Array.isArray(r.genres),
-        );
-      }
+      return Array.isArray(parsed) ? parsed.filter(validRecord) : [];
     } catch {
-      this.records = [];
+      return [];
     }
   }
 
@@ -68,6 +78,7 @@ export class SkipTracker {
     if (this.loadedFor === null) return;
     try {
       this.deps.kv.set(skipsKey(this.loadedFor), JSON.stringify(this.records));
+      this.deps.kv.set(dislikesKey(this.loadedFor), JSON.stringify(this.dislikes));
     } catch {
       /* storage unavailable: keep in memory */
     }
@@ -118,10 +129,42 @@ export class SkipTracker {
     this.version++;
   }
 
+  /**
+   * "Not interested": the item is never recommended again and its artists / genres count
+   * for much less than after a skip. Works for tracks, albums and artists.
+   */
+  dislike(item: BaseItem): void {
+    if (item.id === '') return;
+    this.load();
+    if (this.loadedFor === null) return;
+    this.dislikes = this.dislikes.filter((r) => r.id !== item.id);
+    this.dislikes.push(toSkipRecord(item, this.now()));
+    if (this.dislikes.length > MAX_DISLIKES) this.dislikes.splice(0, this.dislikes.length - MAX_DISLIKES);
+    this.save();
+    this.version++;
+  }
+
+  /** Takes a dislike back (the "Undo" of the toast). */
+  undislike(id: string): void {
+    this.load();
+    if (this.loadedFor === null || !this.dislikes.some((r) => r.id === id)) return;
+    this.dislikes = this.dislikes.filter((r) => r.id !== id);
+    this.save();
+    this.version++;
+  }
+
+  isDisliked(id: string): boolean {
+    void this.version;
+    this.load();
+    return this.dislikes.some((r) => r.id === id);
+  }
+
   /** The skip profile of the active server profile (decayed at `now`). */
   profile(now = this.now()): SkipProfile {
     void this.version;
     this.load();
-    return this.records.length === 0 ? NO_SKIPS : buildSkipProfile(this.records, now);
+    return this.records.length === 0 && this.dislikes.length === 0
+      ? NO_SKIPS
+      : buildSkipProfile(this.records, now, this.dislikes);
   }
 }

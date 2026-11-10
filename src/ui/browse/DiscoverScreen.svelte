@@ -2,7 +2,10 @@
   import { untrack } from 'svelte';
   import { getApp } from '../../lib/app.svelte';
   import type { JellyfinClient } from '../../lib/jellyfin/client';
+  import { dailyMixes, dayKey, type DailyMix } from '../../lib/recommend/daily-mixes';
   import { discoverPage, type DiscoverPage } from '../../lib/recommend/recommender';
+  import { getUi } from '../shell/router.svelte';
+  import Artwork from '../common/Artwork.svelte';
   import { buildRadio } from '../../lib/recommend/radio';
   import Button from '../common/Button.svelte';
   import Icon from '../common/Icon.svelte';
@@ -16,9 +19,20 @@
 
   const app = getApp();
   const act = useActions();
+  const ui = getUi();
   const page = new Resource<DiscoverPage>();
+  const mixes = new Resource<DailyMix[]>();
+
+  function loadMixes(client: JellyfinClient) {
+    const profileId = app.core.sessions.activeId ?? '';
+    void mixes.load(
+      () => dailyMixes(client, { kv: app.kv, profileId, skips: app.skips.profile() }),
+      `${profileId}:daily-mixes:${dayKey(Date.now())}`,
+    );
+  }
 
   function load(client: JellyfinClient, fresh = false) {
+    if (!fresh) loadMixes(client);
     void page.load(
       () => discoverPage(client, Date.now(), fresh, app.skips.profile()),
       `${app.core.sessions.activeId}:discover`,
@@ -33,6 +47,23 @@
   function refresh() {
     const client = app.core.sessions.client;
     if (client) load(client, true);
+  }
+
+  const mixList = $derived.by(() => {
+    void app.skips.version; // a "Not interested" hides items at once
+    const skips = app.skips.profile();
+    return (mixes.data ?? [])
+      .map((m) => ({ ...m, tracks: m.tracks.filter((t) => !skips.isSkipped(t.id)) }))
+      .filter((m) => m.tracks.length > 0);
+  });
+
+  function mixMenu(el: HTMLElement | MouseEvent, m: DailyMix) {
+    ui.openMenu(el, [
+      { label: 'Play', icon: 'play', onselect: () => void act.playTracks(m.tracks, 0) },
+      { label: 'Shuffle', icon: 'shuffle', onselect: () => void act.playTracks(m.tracks, 0, true) },
+      'separator',
+      { label: 'Save as playlist', icon: 'playlistAdd', onselect: () => void act.createPlaylist(m.name, m.tracks) },
+    ]);
   }
 
   let startingRadio = $state(false);
@@ -88,6 +119,33 @@
       <p class="hint">Discover learns your taste from what you play and favourite.</p>
     </div>
   {:else if d}
+    {#if mixList.length > 0}
+      <Shelf title="Daily mixes" subtitle="Refreshed every day from what you listen to">
+        {#each mixList as m (m.id)}
+          <div class="mix-cell" oncontextmenu={(e) => mixMenu(e, m)} role="presentation">
+            <div class="mix-cover" class:mosaic={m.covers.length >= 4}>
+              {#each m.covers.length >= 4 ? m.covers.slice(0, 4) : m.covers.slice(0, 1) as c (c.id)}
+                <span aria-hidden="true"><Artwork item={c} size={m.covers.length >= 4 ? 90 : 180} fill /></span>
+              {/each}
+              <button type="button" class="mix-play" aria-label={`Play ${m.name}`} onclick={() => void act.playTracks(m.tracks, 0)}>
+                <Icon name="play" size={20} />
+              </button>
+              <button
+                type="button"
+                class="mix-more"
+                aria-label={`More options for ${m.name}`}
+                onclick={(e) => mixMenu(e.currentTarget, m)}
+              >
+                <Icon name="more" size={18} />
+              </button>
+            </div>
+            <span class="mix-name">{m.name}</span>
+            <span class="mix-meta">{m.tracks.length} tracks</span>
+          </div>
+        {/each}
+      </Shelf>
+    {/if}
+
     {#if d.mix.length > 0}
       <div class="mix">
         <span class="mix-icon" aria-hidden="true"><Icon name="sparkle" size={22} /></span>
@@ -182,6 +240,69 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+  }
+  .mix-cell {
+    display: flex;
+    flex: 0 0 var(--card-min);
+    flex-direction: column;
+    gap: 2px;
+    width: var(--card-min);
+    min-width: 0;
+    padding: var(--space-3);
+    scroll-snap-align: start;
+  }
+  .mix-cover {
+    position: relative;
+    display: grid;
+    aspect-ratio: 1;
+    margin-bottom: var(--space-2);
+    overflow: hidden;
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-1);
+    background: var(--surface);
+  }
+  .mix-cover.mosaic {
+    grid-template: 1fr 1fr / 1fr 1fr;
+  }
+  .mix-cover span {
+    display: block;
+    min-width: 0;
+    min-height: 0;
+  }
+  .mix-play,
+  .mix-more {
+    position: absolute;
+    display: grid;
+    place-items: center;
+    border: 0;
+    cursor: pointer;
+    color: #fff;
+    background: rgb(0 0 0 / 0.55);
+  }
+  .mix-play {
+    right: var(--space-2);
+    bottom: var(--space-2);
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: var(--accent);
+  }
+  .mix-more {
+    top: var(--space-2);
+    right: var(--space-2);
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+  }
+  .mix-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: var(--weight-semibold);
+  }
+  .mix-meta {
     font-size: var(--text-sm);
     color: var(--text-muted);
   }

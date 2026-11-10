@@ -217,3 +217,46 @@ describe('buildRadio', () => {
     expect(artist?.label).toBe('x radio');
   });
 });
+
+describe('dislikes', () => {
+  it('excludes a disliked track forever and persists per profile', () => {
+    const { tracker, kv } = setup([item('a')]);
+    tracker.dislike(item('a', 'Art', 'Pop'));
+    const p = tracker.profile(NOW + 400 * DAY);
+    expect(p.isSkipped('a')).toBe(true);
+    expect(p.isDisliked('a')).toBe(true);
+    expect(tracker.isDisliked('a')).toBe(true);
+    const again = new SkipTracker({ kv, profileId: () => 'p1', queue: () => [], clock: () => NOW });
+    expect(again.profile().isSkipped('a')).toBe(true);
+    again.undislike('a');
+    expect(again.profile().isSkipped('a')).toBe(false);
+  });
+
+  it('drops artist and genre weights more than a skip and can go below 0.5', () => {
+    const skip = buildSkipProfile([{ id: 'a', artists: ['x'], genres: ['g'], at: NOW }], NOW);
+    const dis = buildSkipProfile([], NOW, [{ id: 'a', artists: ['x'], genres: ['g'], at: NOW }]);
+    expect(dis.factor('artist', 'x', 2)).toBeLessThan(skip.factor('artist', 'x', 2));
+    expect(dis.factor('artist', 'x', 0)).toBeGreaterThanOrEqual(0.25);
+    expect(dis.factor('artist', 'x', 0)).toBeLessThan(0.5 + 1e-9);
+    expect(dis.factor('genre', 'zzz', 0)).toBe(1);
+  });
+
+  it('a disliked artist drops all their tracks from rank and radio batches', () => {
+    const artist = parseBaseItem({ Id: 'ar-Bad', Name: 'Bad', Type: 'MusicArtist' });
+    const { tracker } = setup([]);
+    tracker.dislike(artist);
+    const skips = tracker.profile();
+    expect(skips.isArtistDisliked('bad')).toBe(true);
+    const taste = buildTaste([item('h1', 'Bad', 'Rock', 3), item('h2', 'Good', 'Rock', 3)], NOW);
+    const ranked = rank(taste, [item('n1', 'Bad'), item('n2', 'Good')], { limit: 5, skips });
+    expect(ranked.map((r) => r.item.id)).toEqual(['n2']);
+  });
+
+  it('dislike of a track lowers its artist in the taste', () => {
+    const hist = [item('h1', 'A', 'Rock', 3), item('h2', 'B', 'Pop', 3)];
+    const { tracker } = setup([]);
+    tracker.dislike(item('h1', 'A', 'Rock', 3));
+    const t = buildTaste(hist, NOW, tracker.profile());
+    expect(t.artists.get('a')!.weight).toBeLessThan(t.artists.get('b')!.weight);
+  });
+});

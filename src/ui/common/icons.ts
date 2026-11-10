@@ -66,6 +66,7 @@ export const ICONS = {
   speaker: { fill: false, d: 'M7 3h10v18H7zM12 7h.01M12 17a3 3 0 1 0 0-6 3 3 0 0 0 0 6z' },
   bluetooth: { fill: false, d: 'M7 7l10 10-5 4V3l5 4L7 17' },
   usb: { fill: false, d: 'M12 21a1.500 1.500 0 1 0 0-3 1.500 1.500 0 0 0 0 3zM12 18V4M10 6l2-3 2 3M12 13l-4-3V8M12 11l4-2V7' },
+  ban: { fill: false, d: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM5.600 5.600l12.800 12.800' },
   hdmi: { fill: false, d: 'M3 7h18v7l-3 3H6l-3-3zM8 11h8' },
 } as const;
 

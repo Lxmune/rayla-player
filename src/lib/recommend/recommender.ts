@@ -184,6 +184,12 @@ export const EMPTY_DISCOVER: DiscoverPage = {
   favourites: [],
 };
 
+/** Forget cached recommendations (after "Not interested", so the next load drops the item). */
+export function invalidateRecommendations(client: JellyfinClient): void {
+  cache.delete(client);
+  pageCache.delete(client);
+}
+
 const pageCache = new WeakMap<JellyfinClient, { at: number; value: DiscoverPage }>();
 
 /** One failed query must not take the page down: it just leaves its section empty. */
@@ -253,7 +259,7 @@ async function buildPage(client: JellyfinClient, base: Base, now: number, skips:
     mix: fy.mix,
     topGenres: fy.topGenres,
     albums: fy.albums,
-    artists: suggestArtists(taste, seeds.map((s) => ({ seed: s.name, artists: s.similar })), 16),
+    artists: suggestArtists(taste, seeds.map((s) => ({ seed: s.name, artists: s.similar })), 16, skips),
     becauseArtist,
     byGenre: fy.byGenre,
     newInGenres: newInTaste(taste, newByGenre.flat(), { limit: 16, exclude: shown }),

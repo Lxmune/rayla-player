@@ -8,6 +8,9 @@ import AlbumScreen from './AlbumScreen.svelte';
 import DiscoverScreen from './DiscoverScreen.svelte';
 import HomeScreen from './HomeScreen.svelte';
 import SearchScreen from './SearchScreen.svelte';
+import StatsScreen from './StatsScreen.svelte';
+import { listensKey } from '../../lib/stats/listen-log.svelte';
+import { toListenEntry } from '../../lib/stats/aggregate';
 
 beforeEach(() => localStorage.clear());
 afterEach(() => cleanup());
@@ -133,5 +136,57 @@ describe('album hero', () => {
     expect(screen.getByText('FLAC · 24/96')).toBeTruthy();
     expect(screen.getByText('Single')).toBeTruthy();
     expect(screen.getByText('2 tracks')).toBeTruthy();
+  });
+});
+
+describe('DiscoverScreen daily mixes', () => {
+  it('shows a Daily mixes shelf built from the history and saves one as a playlist', async () => {
+    const played = Array.from({ length: 18 }, (_, i) => ({
+      ...trackJson(`h${i}`, `Hit ${i}`),
+      GenreItems: [{ Id: 'g1', Name: 'Metal' }],
+      ArtistItems: [{ Id: `ar${i % 6}`, Name: `Artist ${i % 6}` }],
+      AlbumId: `al${i}`,
+      UserData: { PlayCount: 5, LastPlayedDate: '2020-01-01T00:00:00Z' },
+    }));
+    const { app, http } = await signedIn({ 'GET /Items': items(...played), 'POST /Playlists': { Id: 'np' } });
+    const { context, ui } = withContext(app);
+    render(DiscoverScreen, { context });
+    await screen.findByRole('heading', { name: 'Daily mixes' });
+    expect(screen.getByRole('button', { name: 'Play Metal mix' })).toBeTruthy();
+    await fireEvent.click(screen.getByRole('button', { name: 'More options for Metal mix' }));
+    const entry = ui.menu?.entries.find((e) => e !== 'separator' && e.label === 'Save as playlist');
+    expect(entry).toBeTruthy();
+    if (entry && entry !== 'separator') entry.onselect();
+    await waitFor(() => expect(http.requests.some((r) => r.method === 'POST' && r.path === '/Playlists')).toBe(true));
+  });
+});
+
+describe('StatsScreen', () => {
+  it('falls back to server play counts when the local log is empty', async () => {
+    const played = [{ ...trackJson('s1', 'Server Song'), UserData: { PlayCount: 4 }, ArtistItems: [{ Id: 'a1', Name: 'Server Artist' }] }];
+    const { app } = await signedIn({ 'GET /Items': items(...played) });
+    render(StatsScreen, { context: withContext(app).context });
+    await screen.findByText('Based on server play counts');
+    await screen.findByRole('heading', { name: 'Top tracks' });
+    expect(screen.getByText('Server Artist', { selector: '.name' })).toBeTruthy();
+    expect(screen.queryByRole('group', { name: 'Period' })).toBeNull();
+  });
+
+  it('uses the local listening log with a period switch', async () => {
+    const { app } = await signedIn({ 'GET /Items': items() });
+    const id = app.core.sessions.activeId as string;
+    const t = parseBaseItem({ ...trackJson('l1', 'Local Song'), ArtistItems: [{ Id: 'a9', Name: 'Local Artist' }] });
+    const now = Date.now();
+    app.kv.set(listensKey(id), JSON.stringify([
+      toListenEntry(t, 180_000, now - 3_600_000),
+      toListenEntry(parseBaseItem({ ...trackJson('l2', 'Old Song'), ArtistItems: [{ Id: 'a8', Name: 'Old Artist' }] }), 60_000, now - 90 * 86_400_000),
+    ]));
+    render(StatsScreen, { context: withContext(app).context });
+    await screen.findByRole('heading', { name: 'Top artists' });
+    expect(screen.getAllByText('Local Artist').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Old Artist')).toBeNull();
+    expect(screen.queryByText('Based on server play counts')).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: 'All time' }));
+    expect((await screen.findAllByText('Old Artist')).length).toBeGreaterThan(0);
   });
 });

@@ -54,6 +54,7 @@ export function pickBatch(groups: Groups, o: PickOptions): BaseItem[] {
     while (q.length > 0) {
       const t = q.shift() as BaseItem;
       if (t.id === '' || used.has(t.id) || skips.isSkipped(t.id)) continue;
+      if (artistsOf(t).some((x) => skips.isArtistDisliked(key(x.name)))) continue;
       const a = artistKey(t);
       const cap = a !== '' && a === o.seedArtist ? (o.seedCap ?? maxPer) : maxPer;
       if (a !== '' && (perArtist.get(a) ?? 0) >= cap) continue;

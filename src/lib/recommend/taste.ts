@@ -200,6 +200,7 @@ export function rank(
     if (item.id === '' || seen.has(item.id)) continue;
     seen.add(item.id);
     if (opts.skips?.isSkipped(item.id)) continue;
+    if (opts.skips && artistsOf(item).some((a) => opts.skips?.isArtistDisliked(keyOf(a.name)))) continue;
     const s = scoreItem(taste, item, opts.similar);
     if (s.score > 0) scored.push(s);
   }
@@ -234,6 +235,7 @@ export function suggestArtists(
   taste: Taste,
   lists: { seed: string; artists: BaseItem[] }[],
   limit: number,
+  skips: SkipProfile = NO_SKIPS,
 ): ArtistSuggestion[] {
   const seen = new Set<string>();
   const out: ArtistSuggestion[] = [];
@@ -243,7 +245,7 @@ export function suggestArtists(
     progress = false;
     for (const q of queues) {
       let a = q.rest.shift();
-      while (a && (a.id === '' || seen.has(a.id) || taste.artists.has(keyOf(a.name)))) a = q.rest.shift();
+      while (a && (a.id === '' || seen.has(a.id) || skips.isSkipped(a.id) || taste.artists.has(keyOf(a.name)))) a = q.rest.shift();
       if (!a) continue;
       progress = true;
       seen.add(a.id);
@@ -252,6 +254,11 @@ export function suggestArtists(
     }
   }
   return out;
+}
+
+/** Skipped repeatedly, disliked, or by a disliked artist. */
+function isBlocked(skips: SkipProfile | undefined, t: BaseItem): boolean {
+  return !!skips && (skips.isSkipped(t.id) || artistsOf(t).some((a) => skips.isArtistDisliked(keyOf(a.name))));
 }
 
 const daysSince = (iso: string | null, now: number): number => {
@@ -272,7 +279,7 @@ export function rediscoverTracks(
     .filter((t) => {
       if (t.id === '' || t.type !== 'Audio' || seen.has(t.id)) return false;
       seen.add(t.id);
-      if (opts.skips?.isSkipped(t.id)) return false;
+      if (isBlocked(opts.skips, t)) return false;
       return t.playCount >= minPlays && daysSince(t.lastPlayed, now) >= days;
     })
     .sort((a, b) => b.playCount - a.playCount || a.name.localeCompare(b.name))
@@ -295,7 +302,7 @@ export function deepCuts(
   const count = new Map<string, number>();
   const seen = new Set<string>();
   const known = tracks
-    .filter((t) => t.id !== '' && t.playCount === 0 && !opts.skips?.isSkipped(t.id) && !seen.has(t.id) && seen.add(t.id))
+    .filter((t) => t.id !== '' && t.playCount === 0 && !isBlocked(opts.skips, t) && !seen.has(t.id) && seen.add(t.id))
     .map((t) => {
       const a = artistsOf(t).map((x) => taste.artists.get(keyOf(x.name))).find(Boolean);
       return { t, w: a?.weight ?? 0, key: a?.key ?? '' };

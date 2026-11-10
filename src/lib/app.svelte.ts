@@ -13,14 +13,19 @@ import { httpFetch, localKv, type HttpFetch, type KeyValueStore } from './platfo
 import type { Secrets } from './jellyfin/session.svelte';
 import { IntegrationCredentials, createScrobbleService } from './integrations/credentials.svelte';
 import { SkipTracker } from './recommend/skips.svelte';
+import { ListenLog } from './stats/listen-log.svelte';
 import { DiscordPresence, type PresenceObservation, type SetActivity } from './integrations/discord-presence';
 
 export interface RaylaApp {
   core: Core;
+  /** Key/value storage (per-device caches such as the daily mixes). */
+  kv: KeyValueStore;
   /** ListenBrainz / Last.fm credentials (OS keychain). */
   credentials: IntegrationCredentials;
   /** Learns which tracks the user skips (feeds Discover and radio). */
   skips: SkipTracker;
+  /** Records what is listened to (feeds the Stats screen). */
+  listens: ListenLog;
   /** Starts the core, loads credentials, flushes pending scrobbles. Never rejects. */
   start(): Promise<void>;
   dispose(): Promise<void>;
@@ -54,6 +59,7 @@ export function createApp(core: Core, deps: IntegrationDeps): RaylaApp {
     queue: () => core.player.queue,
     clock: deps.clock,
   });
+  const listens = new ListenLog({ kv: deps.kv, profileId: () => core.sessions.activeId, clock: deps.clock });
   const presence = new DiscordPresence(deps.setActivity, deps.clock);
   const unsubscribe: Array<() => void> = [];
   /** Latest player observation, re-sent to Discord when its settings change. */
@@ -64,8 +70,10 @@ export function createApp(core: Core, deps: IntegrationDeps): RaylaApp {
 
   return {
     core,
+    kv: deps.kv,
     credentials,
     skips,
+    listens,
     async start() {
       await core.start();
       try {
@@ -85,6 +93,7 @@ export function createApp(core: Core, deps: IntegrationDeps): RaylaApp {
             signalPath: core.player.signalPath,
           };
           skips.observe(e);
+          listens.observe(e);
           void scrobble.tracker.observe({ ...last, playing: e.state === 'playing' });
           observePresence();
         }),
@@ -119,6 +128,7 @@ export function createApp(core: Core, deps: IntegrationDeps): RaylaApp {
     },
     async dispose() {
       unsubscribe.splice(0).forEach((u) => u());
+      listens.flush();
       await presence.clear();
       await core.dispose();
     },
