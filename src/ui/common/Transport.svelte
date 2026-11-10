@@ -21,7 +21,7 @@
       onclick={() => void actions.guard(() => player.toggleShuffle())} />
   {/if}
   <IconButton icon="prev" label="Previous" disabled={none} onclick={() => void actions.guard(() => player.previous())} />
-  <span class="main" class:glow={busy && !none}>
+  <span class="main">
     <IconButton
       primary
       icon={busy ? 'pause' : 'play'}
@@ -44,26 +44,25 @@
     align-items: center;
     justify-content: center;
     gap: var(--space-2);
+    touch-action: manipulation;
+  }
+  .transport :global(button) {
+    touch-action: manipulation;
   }
   .main {
     display: inline-flex;
     border-radius: 50%;
-    transition:
-      box-shadow var(--duration-slow) var(--ease-out),
-      transform var(--duration) var(--ease-out);
-  }
-  .main.glow {
-    box-shadow: 0 0 22px color-mix(in srgb, var(--accent) 55%, transparent);
+    transition: transform var(--duration-fast) var(--ease-out);
   }
   .main:active {
-    transform: scale(0.94);
+    transform: scale(0.92);
   }
   .main :global(.icon-btn.primary) {
     width: 52px;
     height: 52px;
   }
   .main :global(svg) {
-    animation: scale-in var(--duration) var(--ease-out);
+    animation: scale-in var(--duration-fast) var(--ease-out);
   }
   @media (prefers-reduced-motion: reduce) {
     .main :global(svg) {

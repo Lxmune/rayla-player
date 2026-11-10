@@ -268,6 +268,33 @@ describe('PlayerController', () => {
     expect(t.errors.message).toBe('device gone');
   });
 
+  it('play/pause are optimistic and revert when the engine fails', async () => {
+    await t.player.playQueue(album);
+    t.engine.state('playing');
+    const pending = t.player.pause();
+    expect(t.player.playback).toBe('paused');
+    await pending;
+    Object.assign(t.engine, {
+      play: async () => {
+        throw new Error('device gone');
+      },
+    });
+    await t.player.play();
+    expect(t.player.playback).toBe('paused');
+  });
+
+  it('seek ignores stale position events until the engine is near the target', async () => {
+    await t.player.playQueue(album);
+    t.engine.state('playing');
+    await t.player.seek(60000);
+    t.engine.position('a', 5000);
+    expect(t.player.positionMs).toBe(60000);
+    t.engine.position('a', 60200);
+    expect(t.player.positionMs).toBe(60200);
+    t.engine.position('a', 61000);
+    expect(t.player.positionMs).toBe(61000);
+  });
+
   it('bitrate cap change re-arms next with a universal URL', async () => {
     await t.player.playQueue(album);
     await t.settings.setMaxBitrate(128000);

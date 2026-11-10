@@ -87,6 +87,8 @@ export interface PlayerEvent {
   message: string | null;
 }
 
+const SEEK_GUARD_MS = 1500;
+const SEEK_NEAR_MS = 1000;
 const PROGRESS_INTERVAL_MS = 10_000;
 
 export class PlayerController {
@@ -133,6 +135,7 @@ export class PlayerController {
   private lastPrefetchKey: string | null = null;
   private readonly random: () => number;
   private readonly now: () => number;
+  private seekGuard: { target: number; until: number } | null = null;
   private original: QueueEntry[] = [];
   private nextUid = 0;
   private nextRepeat = 0;
@@ -478,11 +481,20 @@ export class PlayerController {
       if (at !== null && at > 0) return this.seek(at).then(() => loaded);
       return loaded;
     }
-    return this.run(() => this.deps.engine.play());
+    const prev = this.playback;
+    this.playback = 'playing'; // optimistic; the engine event confirms
+    return this.run(() => this.deps.engine.play(), () => {
+      if (this.playback === 'playing') this.playback = prev;
+    });
   }
 
   pause(): Promise<void> {
-    return this.run(() => this.deps.engine.pause());
+    const prev = this.playback;
+    if (prev === 'stopped') return this.run(() => this.deps.engine.pause());
+    this.playback = 'paused'; // optimistic; the engine event confirms
+    return this.run(() => this.deps.engine.pause(), () => {
+      if (this.playback === 'paused') this.playback = prev;
+    });
   }
 
   next(): Promise<void> {
@@ -506,6 +518,7 @@ export class PlayerController {
   seek(positionMs: number): Promise<void> {
     if (!this.current) return Promise.resolve();
     this.positionMs = positionMs;
+    this.seekGuard = { target: positionMs, until: this.now() + SEEK_GUARD_MS };
     if (this.pendingSeekMs !== null) {
       // Restored but not loaded yet: remember where the first play() starts.
       this.pendingSeekMs = positionMs;
@@ -519,6 +532,7 @@ export class PlayerController {
     this.endRadio();
     this.reportStopped();
     this.playback = 'stopped';
+    this.seekGuard = null;
     this.positionMs = 0;
     void this.syncPrefetch(true);
     return this.run(() => this.deps.engine.stop());
@@ -571,11 +585,12 @@ export class PlayerController {
   }
 
   /** Engine commands run strictly one after another; failures are reported, never thrown. */
-  private run(call: () => Promise<unknown>): Promise<void> {
+  private run(call: () => Promise<unknown>, onFail?: () => void): Promise<void> {
     this.chain = this.chain.then(async () => {
       try {
         await call();
       } catch (e) {
+        onFail?.();
         this.deps.errors.report(e);
       }
     });
@@ -609,6 +624,7 @@ export class PlayerController {
     this.currentEntryId = `${entry.uid}`;
     const request = this.request(i, this.currentEntryId);
     this.pendingSeekMs = null;
+    this.seekGuard = null;
     this.positionMs = 0;
     this.durationMs = itemDurationMs(entry.item);
     this.signalPath = null;
@@ -708,6 +724,13 @@ export class PlayerController {
       }
       case 'position': {
         if (e.entryId !== null && e.entryId !== this.currentEntryId) return;
+        const g = this.seekGuard;
+        if (g) {
+          // After a seek, ignore stale positions until the engine is near the target.
+          if (Math.abs(e.positionMs - g.target) <= SEEK_NEAR_MS || this.now() >= g.until) {
+            this.seekGuard = null;
+          } else break;
+        }
         this.positionMs = e.positionMs;
         if (e.durationMs > 0 && e.durationMs !== this.durationMs) this.durationMs = e.durationMs;
         if (this.isPlaying && this.now() - this.lastProgress >= PROGRESS_INTERVAL_MS) {
@@ -758,6 +781,7 @@ export class PlayerController {
     this.currentEntryId = entryId;
     if (entryId === this.repeatEntryId) this.repeatEntryId = null;
     this.index = target;
+    this.seekGuard = null;
     this.durationMs = itemDurationMs(entry.item);
     this.positionMs = 0;
     this.reportStart(entry.item);

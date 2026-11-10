@@ -3,10 +3,12 @@
   import Slider from './Slider.svelte';
   import { formatTime } from './format';
   import { useActions } from './actions';
+  import { createPlaybackClock } from './playback-clock.svelte';
 
   const app = getApp();
   const actions = useActions();
   const player = app.core.player;
+  const clock = createPlaybackClock(player);
   const STORAGE_KEY = 'rayla.showRemaining';
 
   function loadRemaining(): boolean {
@@ -28,14 +30,14 @@
 
   let preview = $state<number | null>(null);
   let hover = $state<{ x: number; ms: number } | null>(null);
-  const shown = $derived(preview ?? player.positionMs);
+  const shownSec = $derived(preview === null ? clock.seconds * 1000 : Math.floor(preview / 1000) * 1000);
   const max = $derived(Math.max(player.durationMs, 1));
   const endText = $derived(
-    showRemaining ? `-${formatTime(Math.max(0, player.durationMs - shown))}` : formatTime(player.durationMs),
+    showRemaining ? `-${formatTime(Math.max(0, player.durationMs - shownSec))}` : formatTime(player.durationMs),
   );
 
   function onmove(e: PointerEvent) {
-    if (!player.current || player.durationMs <= 0) return;
+    if (e.pointerType !== 'mouse' || !player.current || player.durationMs <= 0) return;
     const r = e.currentTarget instanceof HTMLElement ? e.currentTarget.getBoundingClientRect() : null;
     if (!r || r.width === 0) return;
     const f = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
@@ -44,7 +46,7 @@
 </script>
 
 <div class="seek">
-  <span class="time">{formatTime(shown)}</span>
+  <span class="time">{formatTime(shownSec)}</span>
   <div
     class="bar"
     class:buffering={player.playback === 'buffering'}
@@ -57,12 +59,13 @@
     {/if}
     <Slider
       label="Seek"
-      value={Math.min(player.positionMs, max)}
+      value={Math.min(clock.ms, max)}
+      bubble={formatTime}
       min={0}
       {max}
       step={1000}
       disabled={!player.current}
-      valueText={`${formatTime(shown)} of ${formatTime(player.durationMs)}`}
+      valueText={`${formatTime(shownSec)} of ${formatTime(player.durationMs)}`}
       onpreview={(v) => (preview = v)}
       oncommit={(v) => {
         preview = null;
