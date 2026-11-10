@@ -143,3 +143,94 @@ export class WheelSwipe {
     return r;
   }
 }
+
+// ---- Cover / track-info carousel (now playing + mini player) ----
+
+export type SkipDir = 'next' | 'previous';
+
+/** Gap between the current cover and its neighbour in the strip, in px. */
+export const CAROUSEL_GAP = 16;
+/** A release this far (fraction of the strip distance) commits without a flick. */
+export const CAROUSEL_COMMIT_FRACTION = 0.25;
+/** Velocity (px/ms) against the drag direction that turns a release into a cancel. */
+export const CAROUSEL_REVERSE_PX_PER_MS = 0.3;
+export const SETTLE_MIN_MS = 140;
+export const SETTLE_MAX_MS = 320;
+export const SETTLE_DEFAULT_MS = 250;
+/** CSS easing used for settle animations (ease-out, slight overshoot-free). */
+export const SETTLE_EASING = 'cubic-bezier(0.22, 1, 0.36, 1)';
+
+/** Queue neighbours exactly as the controller's `next()` / `previous()` pick them (ignoring the 3 s restart rule). */
+export function neighbourIndices(
+  index: number,
+  length: number,
+  repeat: 'off' | 'all' | 'one',
+): { previous: number | null; next: number | null } {
+  if (index < 0 || index >= length) return { previous: null, next: null };
+  let next: number | null = null;
+  if (index + 1 < length) next = index + 1;
+  else if (repeat === 'all') next = 0;
+  let previous: number | null = null;
+  if (index > 0) previous = index - 1;
+  else if (repeat === 'all' && length > 1) previous = length - 1;
+  return { previous, next: next === index ? null : next };
+}
+
+/** Which neighbour a drag of `dx` reveals: dragging left shows the next one. */
+export function peekDirection(dx: number): SkipDir | null {
+  if (dx < 0) return 'next';
+  if (dx > 0) return 'previous';
+  return null;
+}
+
+/**
+ * Strip offset for a drag of `dx`. With a neighbour on that side it follows 1:1 up to
+ * `distance` (cover width + gap); without one it rubber-bands.
+ */
+export function carouselOffset(dx: number, distance: number, hasPrev: boolean, hasNext: boolean): number {
+  if (distance <= 0 || dx === 0) return 0;
+  const dir = peekDirection(dx);
+  const has = dir === 'next' ? hasNext : hasPrev;
+  const a = Math.abs(dx);
+  const px = has ? Math.min(a, distance) : resist(a, distance * 0.3);
+  return Math.sign(dx) * px;
+}
+
+/** Release decision: commit past a quarter of the distance or on a flick; reversing velocity cancels. */
+export function decideCarousel(
+  dx: number,
+  velocity: number,
+  distance: number,
+  hasPrev: boolean,
+  hasNext: boolean,
+): SkipDir | 'cancel' {
+  const dir = peekDirection(dx);
+  if (!dir || distance <= 0) return 'cancel';
+  if (!(dir === 'next' ? hasNext : hasPrev)) return 'cancel';
+  const along = velocity * Math.sign(dx); // px/ms in the drag direction
+  if (along <= -CAROUSEL_REVERSE_PX_PER_MS) return 'cancel';
+  const a = Math.abs(dx);
+  if (along >= FLICK_PX_PER_MS && a > 10) return dir;
+  return a >= distance * CAROUSEL_COMMIT_FRACTION ? dir : 'cancel';
+}
+
+/** Where the strip settles: the neighbour centred (next: -distance, previous: +distance) or back home. */
+export function settleTarget(verdict: SkipDir | 'cancel', distance: number): number {
+  if (verdict === 'next') return -distance;
+  if (verdict === 'previous') return distance;
+  return 0;
+}
+
+/** Settle duration: remaining travel at the release speed, clamped; default when nearly still. */
+export function settleDuration(from: number, to: number, velocity: number): number {
+  const remaining = Math.abs(to - from);
+  const v = Math.abs(velocity);
+  if (remaining < 1) return 0;
+  if (v < 0.05) return SETTLE_DEFAULT_MS;
+  return Math.round(Math.min(SETTLE_MAX_MS, Math.max(SETTLE_MIN_MS, remaining / v)));
+}
+
+/** 0..1 progress of the strip towards the neighbour (drives the title cross-fade). */
+export function carouselProgress(offset: number, distance: number): number {
+  return distance > 0 ? Math.min(1, Math.abs(offset) / distance) : 0;
+}

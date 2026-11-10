@@ -15,3 +15,21 @@ export function classifySwipe(dx: number, dy: number): SwipeResult {
   if (ax >= SWIPE_SIDE_PX) return dx < 0 ? 'left' : 'right';
   return 'none';
 }
+
+import type { BaseItem } from '../../lib/jellyfin/models';
+import type { JellyfinClient } from '../../lib/jellyfin/client';
+import { preloadArtwork, preloadBackdrop } from '../common/image-cache';
+
+/** Decodes covers (at each of `sizes`) and backdrops for the neighbouring queue entries. */
+export function preloadNeighbours(
+  client: JellyfinClient | null,
+  items: readonly (BaseItem | null | undefined)[],
+  sizes: readonly number[],
+): void {
+  if (!client) return;
+  for (const it of items) {
+    if (!it) continue;
+    for (const s of sizes) preloadArtwork(client, it, s);
+    preloadBackdrop(client, it);
+  }
+}

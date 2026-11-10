@@ -82,3 +82,53 @@ describe('gestures', () => {
     expect(w.add(5, 50, 2000)).toBeNull(); // vertical scroll
   });
 });
+
+import {
+  carouselOffset, carouselProgress, decideCarousel, neighbourIndices, peekDirection, settleDuration, settleTarget,
+} from './gestures';
+
+describe('carousel maths', () => {
+  it('neighbours follow the controller (repeat all wraps)', () => {
+    expect(neighbourIndices(1, 3, 'off')).toEqual({ previous: 0, next: 2 });
+    expect(neighbourIndices(0, 3, 'off')).toEqual({ previous: null, next: 1 });
+    expect(neighbourIndices(2, 3, 'off')).toEqual({ previous: 1, next: null });
+    expect(neighbourIndices(2, 3, 'all')).toEqual({ previous: 1, next: 0 });
+    expect(neighbourIndices(0, 3, 'all')).toEqual({ previous: 2, next: 1 });
+    expect(neighbourIndices(0, 1, 'all')).toEqual({ previous: null, next: null });
+    expect(neighbourIndices(-1, 0, 'off')).toEqual({ previous: null, next: null });
+  });
+  it('dragging left peeks next, right peeks previous', () => {
+    expect(peekDirection(-5)).toBe('next');
+    expect(peekDirection(5)).toBe('previous');
+    expect(peekDirection(0)).toBeNull();
+  });
+  it('offset is 1:1 with a neighbour, clamped, and rubber-banded without', () => {
+    expect(carouselOffset(-120, 400, true, true)).toBe(-120);
+    expect(carouselOffset(-900, 400, true, true)).toBe(-400);
+    const rb = carouselOffset(-300, 400, true, false);
+    expect(rb).toBeLessThan(0);
+    expect(Math.abs(rb)).toBeLessThan(120);
+    expect(carouselOffset(0, 400, true, true)).toBe(0);
+  });
+  it('commit decision uses distance, flick and reversal', () => {
+    expect(decideCarousel(-120, 0, 400, true, true)).toBe('next');
+    expect(decideCarousel(120, 0, 400, true, true)).toBe('previous');
+    expect(decideCarousel(-50, 0, 400, true, true)).toBe('cancel');
+    expect(decideCarousel(-50, -0.8, 400, true, true)).toBe('next');
+    expect(decideCarousel(-150, 0.5, 400, true, true)).toBe('cancel');
+    expect(decideCarousel(-300, 0, 400, true, false)).toBe('cancel');
+    expect(decideCarousel(300, 0, 400, false, true)).toBe('cancel');
+  });
+  it('settle target and duration', () => {
+    expect(settleTarget('next', 400)).toBe(-400);
+    expect(settleTarget('previous', 400)).toBe(400);
+    expect(settleTarget('cancel', 400)).toBe(0);
+    expect(settleDuration(-100, -400, 0)).toBe(250);
+    expect(settleDuration(-100, -400, 3)).toBe(140);
+    expect(settleDuration(-390, -400, 0.05)).toBe(200);
+    expect(settleDuration(-390, -400, 0.01)).toBe(250);
+    expect(settleDuration(-400, -400, 1)).toBe(0);
+    expect(settleDuration(0, -300, 0.5)).toBe(320);
+    expect(carouselProgress(-200, 400)).toBe(0.5);
+  });
+});

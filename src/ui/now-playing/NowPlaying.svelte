@@ -13,12 +13,15 @@
   import { useItemMenu } from '../common/item-menu';
   import { getRouter, getUi } from '../shell/router.svelte';
   import { deviceIcon, OutputDevices } from '../sheets/output-devices.svelte';
-  import { onDestroy, onMount } from 'svelte';
+  import { onDestroy, onMount, tick } from 'svelte';
   import { haptic } from '../common/haptics';
   import {
-    VelocityTracker, WheelSwipe, coverDragOffset, decideCoverDrag, decideRelease, decideSkip, pastThreshold,
-    sheetDragStyle,
+    CAROUSEL_GAP, SETTLE_EASING, VelocityTracker, WheelSwipe, carouselOffset, carouselProgress, decideCarousel,
+    decideCoverDrag, decideRelease, neighbourIndices, pastThreshold, peekDirection, settleDuration, settleTarget,
+    sheetDragStyle, type SkipDir,
   } from '../shell/gestures';
+  import { preloadNeighbours } from '../shell/swipe';
+  import type { BaseItem } from '../../lib/jellyfin/models';
   import { prefersReducedMotion } from '../common/touch';
   import Lyrics from './Lyrics.svelte';
   import QueuePanel from './QueuePanel.svelte';
@@ -110,31 +113,157 @@
     }
   }
 
-  // Cover: drag sideways (touch, pen or mouse) to skip; down (touch/pen) still closes the sheet.
-  let cover: { x: number; y: number; id: number; mode: 'h' | 'v' | null } | null = null;
+  // Cover carousel: the neighbour cover peeks in beside the current one and follows the finger
+  // (1:1, rubber band where there is no neighbour). On commit the strip settles with the neighbour
+  // centred, THEN the player switches; the strip is only reset once the new current cover painted.
+  // Per-move work is imperative transform/opacity writes (no reactive layout).
+  let cover: { x: number; y: number; id: number; mode: 'h' | 'v' | null; hasPrev: boolean; hasNext: boolean } | null =
+    null;
   let coverSwiped = false;
   let coverCrossed = false;
-  let coverX = $state(0);
-  let coverSettling = $state(false);
-  let coverEnter = $state<'' | 'left' | 'right'>('');
+  let coverEl: HTMLElement | undefined = $state();
+  let strip: HTMLElement | undefined = $state();
+  let titlesEl: HTMLElement | undefined = $state();
+  let tslider: HTMLElement | undefined = $state();
+  let tcur: HTMLElement | undefined = $state();
+  let tpeek: HTMLElement | undefined = $state();
+  let peek = $state.raw<{ dir: SkipDir; item: BaseItem } | null>(null);
+  let dragLive = $state(false);
+  let busy = false;
+  let dist = 0;
+  let tdist = 0;
+  let curOffset = 0;
+  let anims: Animation[] = [];
   const coverVel = new VelocityTracker();
   const wheel = new WheelSwipe();
+  const nb = $derived(neighbourIndices(player.index, player.queue.length, player.repeat));
 
-  function skip(dir: 'next' | 'previous') {
-    haptic('tick');
-    if (!prefersReducedMotion()) {
-      coverEnter = dir === 'next' ? 'left' : 'right';
-      setTimeout(() => (coverEnter = ''), 260);
-    }
-    void actions.guard(() => (dir === 'next' ? player.next() : player.previous()));
+  function neighbourItem(dir: SkipDir): BaseItem | null {
+    // previous() restarts the track after 3 s instead of going back: no neighbour to show then.
+    if (dir === 'previous' && player.positionMs > 3000) return null;
+    const i = dir === 'next' ? nb.next : nb.previous;
+    return i === null ? null : (player.queue[i]?.item ?? null);
   }
+
+  // Decode the neighbours' covers (exact sizes rendered here) and backdrops ahead of any skip.
+  $effect(() => {
+    const q = player.queue;
+    const items = [nb.previous, nb.next, player.nextIndex].map((i) => (i === null ? null : (q[i]?.item ?? null)));
+    preloadNeighbours(app.core.sessions.client, items, [640, 40]);
+  });
+
+  function measure() {
+    dist = (coverEl?.clientWidth ?? 300) + CAROUSEL_GAP;
+    tdist = titlesEl?.clientWidth ?? 0;
+  }
+  const tx = (px: number) => (px === 0 ? 'translate3d(0,0,0)' : `translate3d(${px}px,0,0)`);
+
+  function applyOffset(px: number) {
+    curOffset = px;
+    const p = carouselProgress(px, dist);
+    const tpx = dist > 0 ? (px / dist) * tdist : 0;
+    if (strip) strip.style.transform = tx(px);
+    if (tslider) tslider.style.transform = tx(tpx);
+    if (tcur) tcur.style.opacity = String(1 - p);
+    if (tpeek) tpeek.style.opacity = String(p);
+  }
+  function resetStrip() {
+    for (const a of anims) a.cancel();
+    anims = [];
+    for (const el of [strip, tslider, tcur, tpeek]) {
+      if (el) {
+        el.style.transform = '';
+        el.style.opacity = '';
+      }
+    }
+    curOffset = 0;
+    peek = null;
+    dragLive = false;
+  }
+  /** Animates the strip (and the titles with it) from `from` to `to`; resolves when finished. */
+  async function slideTo(from: number, to: number, ms: number): Promise<void> {
+    for (const a of anims) a.cancel();
+    anims = [];
+    const ratio = dist > 0 ? tdist / dist : 0;
+    const p0 = carouselProgress(from, dist);
+    const p1 = carouselProgress(to, dist);
+    curOffset = to;
+    const run = (el: HTMLElement | undefined, kf: Keyframe[]) => {
+      if (!el || typeof el.animate !== 'function' || ms <= 0) return null;
+      const a = el.animate(kf, { duration: ms, easing: SETTLE_EASING, fill: 'forwards' });
+      anims.push(a);
+      return a.finished.catch(() => undefined);
+    };
+    const done = [
+      run(strip, [{ transform: tx(from) }, { transform: tx(to) }]),
+      run(tslider, [{ transform: tx(from * ratio) }, { transform: tx(to * ratio) }]),
+      run(tcur, [{ opacity: 1 - p0 }, { opacity: 1 - p1 }]),
+      run(tpeek, [{ opacity: p0 }, { opacity: p1 }]),
+    ].filter((x) => x !== null);
+    if (done.length === 0) {
+      applyOffset(to);
+      return;
+    }
+    await Promise.all(done);
+  }
+  const frame = () => new Promise<void>((r) => requestAnimationFrame(() => r()));
+
+  /** Slide to the neighbour, then switch the player; resets once the new cover is on screen. */
+  async function commitSkip(dir: SkipDir, from: number, velocity: number) {
+    if (busy) return;
+    const it = neighbourItem(dir);
+    if (!it || prefersReducedMotion()) {
+      haptic('tick');
+      resetStrip();
+      void actions.guard(() => (dir === 'next' ? player.next() : player.previous()));
+      return;
+    }
+    busy = true;
+    haptic('tick');
+    measure();
+    dragLive = true;
+    if (peek?.dir !== dir) {
+      peek = { dir, item: it };
+      await tick();
+    }
+    const target = settleTarget(dir, dist);
+    await slideTo(from, target, settleDuration(from, target, velocity));
+    const before = player.index;
+    void actions.guard(() => (dir === 'next' ? player.next() : player.previous()));
+    await tick();
+    await frame();
+    await frame();
+    if (player.index === before) await slideTo(target, 0, 200);
+    resetStrip();
+    busy = false;
+  }
+  function skip(dir: SkipDir) {
+    if (busy) return;
+    if (!neighbourItem(dir)) {
+      // Wheel at the queue's end does nothing; before 3 s / at the start `previous` restarts the track.
+      if (dir === 'previous') void actions.guard(() => player.previous());
+      return;
+    }
+    void commitSkip(dir, 0, 0);
+  }
+  async function springBack(velocity: number) {
+    busy = true;
+    measure();
+    await slideTo(curOffset, 0, settleDuration(curOffset, 0, velocity));
+    resetStrip();
+    busy = false;
+  }
+
   function coverDown(e: PointerEvent) {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
+    if (busy) return;
     swipeStart(e);
-    cover = { x: e.clientX, y: e.clientY, id: e.pointerId, mode: null };
+    cover = {
+      x: e.clientX, y: e.clientY, id: e.pointerId, mode: null,
+      hasPrev: neighbourItem('previous') !== null, hasNext: neighbourItem('next') !== null,
+    };
     coverSwiped = false;
     coverCrossed = false;
-    coverSettling = false;
     coverVel.reset();
   }
   function coverMove(e: PointerEvent) {
@@ -155,6 +284,8 @@
       }
       c.mode = 'h';
       swipe = null;
+      measure(); // widths are read once per drag
+      dragLive = true;
       try {
         (e.currentTarget as HTMLElement).setPointerCapture(c.id);
       } catch {
@@ -162,10 +293,15 @@
       }
     }
     if (c.mode === 'v') return swipeMove(e);
-    const w = (e.currentTarget as HTMLElement).clientWidth || 300;
-    coverX = coverDragOffset(dx, w);
+    const dir = peekDirection(dx);
+    const wanted = dir && (dir === 'next' ? c.hasNext : c.hasPrev) ? dir : null;
+    if (wanted && peek?.dir !== wanted) {
+      const it = neighbourItem(wanted);
+      if (it) peek = { dir: wanted, item: it };
+    } else if (!wanted && peek) peek = null;
+    applyOffset(carouselOffset(dx, dist, c.hasPrev, c.hasNext));
     coverVel.add(e.timeStamp, dx);
-    const past = pastThreshold(Math.abs(dx), w);
+    const past = pastThreshold(Math.abs(dx), dist);
     if (past !== coverCrossed) haptic('tick');
     coverCrossed = past;
   }
@@ -174,17 +310,20 @@
     cover = null;
     if (c?.mode !== 'h') return swipeEnd(e);
     coverSwiped = true;
-    coverSettling = true;
-    coverX = 0;
-    const w = (e.currentTarget as HTMLElement).clientWidth || 300;
-    const verdict = decideSkip(e.clientX - c.x, Math.abs(coverVel.get()), w);
-    if (verdict !== 'cancel') skip(verdict);
+    const dx = e.clientX - c.x;
+    const v = coverVel.get();
+    const verdict = decideCarousel(dx, v, dist, c.hasPrev, c.hasNext);
+    if (verdict !== 'cancel') return void commitSkip(verdict, curOffset, v);
+    // Past 3 s a right swipe restarts the track (previous()): spring back and do that.
+    if (!c.hasPrev && dx > 0 && player.index >= 0 && player.positionMs > 3000
+      && decideCarousel(dx, v, dist, true, true) === 'previous') {
+      haptic('tick');
+      void actions.guard(() => player.previous());
+    }
+    void springBack(v);
   }
   function coverCancel() {
-    if (cover?.mode === 'h') {
-      coverSettling = true;
-      coverX = 0;
-    }
+    if (cover?.mode === 'h') void springBack(0);
     cover = null;
     swipeCancel();
   }
@@ -262,24 +401,38 @@
   <div class="layout">
     <div class="left">
       {#if item}
-        <div class="cover" class:paused class:settling={coverSettling} class:enter-left={coverEnter === 'left'}
-          class:enter-right={coverEnter === 'right'} role="presentation" onpointerdown={coverDown}
-          onpointermove={coverMove} onpointerup={coverUp} onpointercancel={coverCancel}
-          onclickcapture={coverClick} onwheel={coverWheel} ondragstart={(e) => e.preventDefault()}
-          style:translate={coverX !== 0 ? `${coverX}px 0` : undefined}
-          style:opacity={coverX !== 0 ? 1 - Math.min(0.6, Math.abs(coverX) / 400) : undefined}>
-          <Artwork {item} size={640} fill />
+        <div class="cover" class:paused class:live={dragLive} role="presentation" bind:this={coverEl}
+          onpointerdown={coverDown} onpointermove={coverMove} onpointerup={coverUp} onpointercancel={coverCancel}
+          onclickcapture={coverClick} onwheel={coverWheel} ondragstart={(e) => e.preventDefault()}>
+          <div class="strip" bind:this={strip}>
+            <div class="slide"><Artwork {item} size={640} fill /></div>
+            {#if peek}
+              <div class="slide peek" class:before={peek.dir === 'previous'} aria-hidden="true">
+                <Artwork item={peek.item} size={640} fill />
+              </div>
+            {/if}
+          </div>
         </div>
         <div class="meta">
-          <div class="titles">
-            <h1>{item.name}</h1>
-            <p class="sub">
-              <button type="button" class="link" onclick={() => void openArtist()}>{artistLine(item)}</button>
-              {#if item.album}
-                <span aria-hidden="true">·</span>
-                <button type="button" class="link" onclick={() => void openAlbum()}>{item.album}</button>
+          <div class="titles" class:live={dragLive} bind:this={titlesEl}>
+            <div class="tslider" bind:this={tslider}>
+              <div class="tcur" bind:this={tcur}>
+                <h1>{item.name}</h1>
+                <p class="sub">
+                  <button type="button" class="link" onclick={() => void openArtist()}>{artistLine(item)}</button>
+                  {#if item.album}
+                    <span aria-hidden="true">·</span>
+                    <button type="button" class="link" onclick={() => void openAlbum()}>{item.album}</button>
+                  {/if}
+                </p>
+              </div>
+              {#if peek}
+                <div class="tpeek" class:before={peek.dir === 'previous'} bind:this={tpeek} aria-hidden="true">
+                  <h1>{peek.item.name}</h1>
+                  <p class="sub">{artistLine(peek.item)}{peek.item.album ? ` · ${peek.item.album}` : ''}</p>
+                </div>
               {/if}
-            </p>
+            </div>
           </div>
           <div class="meta-actions">
             <IconButton
@@ -353,6 +506,7 @@
     animation: np-open 300ms var(--ease-out);
     transform-origin: 50% 100%;
     will-change: transform;
+    overflow: hidden;
     /* Fixed over everything, so it pads itself; on Android its gradient shows behind the status bar. */
     padding: var(--sai-top, env(safe-area-inset-top, 0px)) env(safe-area-inset-right, 0px)
       env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
@@ -400,9 +554,6 @@
   .cover {
     width: min(100%, 48vh);
     margin: 0 auto;
-    border-radius: var(--radius-lg);
-    overflow: hidden;
-    box-shadow: var(--art-shadow);
     transition: transform var(--duration-slow) var(--ease-out);
   }
   .cover.paused {
@@ -416,6 +567,8 @@
   }
   .titles {
     min-width: 0;
+    flex: 1;
+    overflow: hidden;
   }
   h1 {
     margin: 0;
@@ -497,26 +650,45 @@
     touch-action: none;
     cursor: grab;
   }
-  .cover.settling {
-    transition:
-      translate var(--duration) var(--ease-out),
-      opacity var(--duration) var(--ease-out),
-      transform var(--duration-slow) var(--ease-out);
+  .strip {
+    position: relative;
   }
-  .cover.enter-left {
-    animation: cover-in-left 240ms var(--ease-out);
+  .cover.live .strip {
+    will-change: transform;
   }
-  .cover.enter-right {
-    animation: cover-in-right 240ms var(--ease-out);
+  .slide {
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    box-shadow: var(--art-shadow);
   }
-  @keyframes cover-in-left {
-    from { translate: 48px 0; opacity: 0; }
+  .slide.peek {
+    position: absolute;
+    top: 0;
+    width: 100%;
+    left: calc(100% + 16px);
+    pointer-events: none;
   }
-  @keyframes cover-in-right {
-    from { translate: -48px 0; opacity: 0; }
+  .slide.peek.before {
+    left: auto;
+    right: calc(100% + 16px);
   }
-  @media (prefers-reduced-motion: reduce) {
-    .cover.enter-left, .cover.enter-right { animation: none; }
+  .tslider {
+    position: relative;
+  }
+  .titles.live .tslider {
+    will-change: transform;
+  }
+  .tpeek {
+    position: absolute;
+    top: 0;
+    width: 100%;
+    left: 100%;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .tpeek.before {
+    left: auto;
+    right: 100%;
   }
   .right {
     display: flex;
