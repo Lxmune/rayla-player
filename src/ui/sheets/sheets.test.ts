@@ -26,7 +26,7 @@ async function play(over: Partial<SignalPath>) {
   await b.app.core.player.playQueue([track('a')]);
   b.engine.emit({
     kind: 'signalPathChanged', state: 'playing', trackId: 'a', entryId: null,
-    positionMs: 0, durationMs: 0, signalPath: path(over), message: null, throughputBps: 0,
+    positionMs: 0, durationMs: 0, signalPath: path(over), message: null, throughputBps: 0, cachedBytes: 0, totalBytes: 0,
   });
   b.engine.trackStarted('a');
   await flush();

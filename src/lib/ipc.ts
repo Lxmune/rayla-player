@@ -6,6 +6,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import type { MediaAction, NowPlayingInfo } from './android';
 
 // ---------------------------------------------------------------- engine types
 
@@ -113,7 +114,8 @@ export type EventKind =
   | 'trackEnded' // trackId played to its end
   | 'signalPathChanged'
   | 'error' // message, for trackId/entryId when set
-  | 'throughput'; // throughputBps measured while fetching trackId into the cache
+  | 'throughput' // throughputBps measured while fetching trackId into the cache
+  | 'fetchProgress'; // cachedBytes/totalBytes of trackId's stream-cache entry (~2 Hz while downloading, once when complete)
 
 export interface EngineEvent {
   kind: EventKind;
@@ -126,6 +128,17 @@ export interface EngineEvent {
   message: string | null;
   /** Network rate in bits/s; set on `throughput` events, else 0. */
   throughputBps: number;
+  /** Bytes of trackId in the stream cache; set on `fetchProgress` events, else 0. */
+  cachedBytes: number;
+  /** Full size; 0 = unknown (chunked transcode) or not a `fetchProgress` event. */
+  totalBytes: number;
+}
+
+export interface CacheStats {
+  usedBytes: number;
+  limitBytes: number;
+  /** Cached tracks (complete or partial). */
+  entries: number;
 }
 
 export interface DiscordButton {
@@ -182,6 +195,8 @@ export interface DownloadProgress {
 
 export const ENGINE_EVENT = 'engine://event';
 export const DOWNLOAD_PROGRESS_EVENT = 'downloads://progress';
+/** Desktop OS media controls (SMTC / MPNowPlayingInfoCenter / MPRIS); same payload as Android's. */
+export const MEDIA_ACTION_EVENT = 'media://action';
 
 export const ipc = {
   /** Null when the engine started, else why it failed (shown as a banner). */
@@ -200,6 +215,14 @@ export const ipc = {
    * one at a time. Replaces the previous list; tracks no longer listed are dropped.
    */
   prefetch: (tracks: TrackRequest[]) => invoke<void>('engine_prefetch', { tracks }),
+  /** Stream-cache usage. */
+  cacheStats: () => invoke<CacheStats>('engine_cache_stats'),
+  /** Deletes every stream-cache entry not currently in use (offline downloads are separate). */
+  cacheClear: () => invoke<void>('engine_cache_clear'),
+  /** Stream-cache size cap in bytes; prunes least recently used entries now. */
+  cacheSetLimit: (bytes: number) => invoke<void>('engine_cache_set_limit', { bytes }),
+  /** Ids of the given tracks whose stream-cache entry is complete (cache key = id + url). */
+  cachedTracks: (tracks: TrackRequest[]) => invoke<string[]>('engine_cached_tracks', { tracks }),
   play: () => invoke<void>('engine_play'),
   pause: () => invoke<void>('engine_pause'),
   stop: () => invoke<void>('engine_stop'),
@@ -211,6 +234,12 @@ export const ipc = {
   /** Show or clear (null) Rich Presence. Discord not running is not an error. */
   discordSetActivity: (applicationId: string, activity: DiscordActivity | null) =>
     invoke<void>('discord_set_activity', { applicationId, activity }),
+
+  /** Desktop OS media controls (media keys, Windows SMTC, macOS Now Playing, Linux MPRIS). */
+  mediaUpdateNowPlaying: (info: NowPlayingInfo) => invoke<void>('media_update_now_playing', { info }),
+  mediaClearNowPlaying: () => invoke<void>('media_clear_now_playing'),
+  onMediaAction: (cb: (a: MediaAction) => void): Promise<UnlistenFn> =>
+    listen<MediaAction>(MEDIA_ACTION_EVENT, (e) => cb(e.payload)),
 
   /** OS keychain. value null/empty deletes. */
   secretGet: (key: string) => invoke<string | null>('secret_get', { key }),

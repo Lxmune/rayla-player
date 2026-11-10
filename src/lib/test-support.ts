@@ -173,6 +173,8 @@ export class FakeEngine {
       signalPath: null,
       message: null,
       throughputBps: 0,
+      cachedBytes: 0,
+      totalBytes: 0,
       ...o,
     };
   }
@@ -238,6 +240,22 @@ export class FakeEngine {
   readonly prefetch = async (tracks: TrackRequest[]) => {
     this.prefetchCalls.push(tracks);
   };
+  fetchProgress(id: string, cachedBytes: number, totalBytes: number) {
+    this.emit(this.event('fetchProgress', id, { cachedBytes, totalBytes }));
+  }
+  /** Ids `cachedTracks` reports as fully cached. */
+  cached = new Set<string>();
+  cacheLimitBytes: number | null = null;
+  cacheClears = 0;
+  readonly cacheStats = async () => ({ usedBytes: 0, limitBytes: this.cacheLimitBytes ?? 0, entries: 0 });
+  readonly cacheClear = async () => {
+    this.cacheClears += 1;
+  };
+  readonly cacheSetLimit = async (bytes: number) => {
+    this.cacheLimitBytes = bytes;
+  };
+  readonly cachedTracks = async (tracks: TrackRequest[]) =>
+    tracks.filter((t) => this.cached.has(t.id)).map((t) => t.id);
   throughput(bps: number, id = 'x') {
     this.emit(this.event('throughput', id, { throughputBps: bps }));
   }

@@ -62,8 +62,12 @@ export interface BehaviorSettings {
   startScreen: StartScreen;
 }
 
-export const TRANSCODE_CODECS = ['aac', 'mp3'] as const;
-/** What the server transcodes to when the bitrate cap applies (AAC is ADTS). */
+export const TRANSCODE_CODECS = ['aac', 'mp3', 'flac'] as const;
+/**
+ * What the server transcodes to when the bitrate cap applies (AAC is ADTS). `flac` =
+ * lossless CD quality (FLAC, at most 16-bit / 48 kHz) for sources above the cap;
+ * effective caps below 1411 kbps (e.g. adaptive) fall back to AAC.
+ */
 export type TranscodeCodec = (typeof TRANSCODE_CODECS)[number];
 
 export const MAX_PREFETCH_TRACKS = 5;
@@ -74,7 +78,12 @@ export interface StreamingSettings {
   adaptive: boolean;
   /** Queue tracks after the next one downloaded fully ahead of time, 0..MAX_PREFETCH_TRACKS. */
   prefetchTracks: number;
+  /** Stream-cache size cap in MB, CACHE_LIMITS_MB range. */
+  cacheLimitMb: number;
 }
+
+export const CACHE_LIMIT_MIN_MB = 256;
+export const CACHE_LIMIT_MAX_MB = 51_200;
 
 export interface AppSettings {
   /** null = system default device. */
@@ -154,6 +163,7 @@ export const DEFAULT_STREAMING: StreamingSettings = {
   codec: 'aac',
   adaptive: false,
   prefetchTracks: 2,
+  cacheLimitMb: 3072,
 };
 
 export const DEFAULT_SETTINGS: AppSettings = {
