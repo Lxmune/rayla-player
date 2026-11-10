@@ -13,7 +13,7 @@
   const app = getApp();
   const router = getRouter();
   const actions = useActions();
-  let tab = $state<'tracks' | 'albums'>('tracks');
+  let tab = $state<'tracks' | 'albums' | 'artists'>('tracks');
 
   const trackPager = $derived(
     new Pager(async (startIndex) => {
@@ -29,7 +29,15 @@
       return client.albums({ favoritesOnly: true, startIndex, limit: 60 });
     }),
   );
-  const active = $derived(tab === 'tracks' ? trackPager : albumPager);
+  const artistPager = $derived(
+    new Pager(async (startIndex) => {
+      const client = app.core.sessions.client;
+      if (!client) throw new Error('Not signed in');
+      return client.albumArtists({ favoritesOnly: true, startIndex, limit: 60 });
+    }),
+  );
+  const active = $derived(tab === 'tracks' ? trackPager : tab === 'albums' ? albumPager : artistPager);
+  const noun = $derived(tab === 'tracks' ? 'track' : tab === 'albums' ? 'album' : 'artist');
 
   function playAll(shuffle: boolean) {
     void actions.playTracks(trackPager.items, 0, shuffle);
@@ -39,7 +47,7 @@
 <section class="screen">
   <ScreenHeader
     title="Favorites"
-    subtitle={active.total > 0 ? plural(active.total, tab === 'tracks' ? 'track' : 'album') : undefined}
+    subtitle={active.total > 0 ? plural(active.total, noun) : undefined}
   >
     {#if tab === 'tracks'}
       <Button icon="play" primary disabled={trackPager.items.length === 0} onclick={() => playAll(false)}>Play all</Button>
@@ -50,9 +58,10 @@
       options={[
         { id: 'tracks', label: 'Tracks' },
         { id: 'albums', label: 'Albums' },
+        { id: 'artists', label: 'Artists' },
       ]}
       value={tab}
-      onchange={(id) => (tab = id === 'albums' ? 'albums' : 'tracks')}
+      onchange={(id) => (tab = id === 'albums' || id === 'artists' ? id : 'tracks')}
     />
   </ScreenHeader>
   {#if tab === 'tracks'}
@@ -61,7 +70,9 @@
       onplay={(i) => void actions.playTracks(trackPager.items, i)}
       empty="No favorite tracks yet. Tap the heart on a song to add it."
     />
-  {:else}
+  {:else if tab === 'albums'}
     <PagedGrid pager={albumPager} onopen={(i) => router.open(i)} empty="No favorite albums yet." />
+  {:else}
+    <PagedGrid pager={artistPager} onopen={(i) => router.open(i)} empty="No favorite artists yet." />
   {/if}
 </section>

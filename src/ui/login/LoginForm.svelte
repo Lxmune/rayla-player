@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Icon from '../common/Icon.svelte';
   import { getApp } from '../../lib/app.svelte';
   import { describeError } from '../../lib/jellyfin/client';
   import { previewServer } from './avatar';
@@ -75,7 +76,7 @@
         aria-pressed={showPassword}
         onclick={() => (showPassword = !showPassword)}
       >
-        {showPassword ? 'Hide' : 'Show'}
+        <Icon name={showPassword ? 'eyeOff' : 'eye'} size={18} />
       </button>
     </div>
   </div>

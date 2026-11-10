@@ -330,6 +330,17 @@ describe('JellyfinClient', () => {
       expect(http.requests[1]?.query['Filters']).toBeUndefined();
     });
 
+    it('albumArtists() sorts and filters favorites', async () => {
+      const http = new FakeHttp({ 'GET /Artists/AlbumArtists': { Items: [], TotalRecordCount: 0 } });
+      await fakeClient(http).albumArtists({ sortBy: 'Random', favoritesOnly: true });
+      const q = http.requests[0]?.query ?? {};
+      expect(q['SortBy']).toBe('Random');
+      expect(q['IsFavorite']).toBe('true');
+      await fakeClient(http).albumArtists();
+      expect(http.requests[1]?.query['SortBy']).toBe('SortName');
+      expect(http.requests[1]?.query['IsFavorite']).toBeUndefined();
+    });
+
     it('similar() hits the Similar endpoint', async () => {
       const http = new FakeHttp({ 'GET /Items/ar1/Similar': { Items: [{ Id: 'ar2', Name: 'B', Type: 'MusicArtist' }] } });
       const page = await fakeClient(http).similar('ar1', 5);

@@ -220,10 +220,14 @@ export class JellyfinClient {
     return parseItemsPage(json);
   }
 
-  albumArtists(opts: { startIndex?: number; limit?: number } = {}): Promise<ItemsPage> {
+  albumArtists(
+    opts: { startIndex?: number; limit?: number; sortBy?: string; descending?: boolean; favoritesOnly?: boolean } = {},
+  ): Promise<ItemsPage> {
     return this.items('/Artists/AlbumArtists', {
-      SortBy: 'SortName',
-      SortOrder: 'Ascending',
+      SortBy: opts.sortBy ?? 'SortName',
+      SortOrder: opts.descending ? 'Descending' : 'Ascending',
+      IsFavorite: opts.favoritesOnly ? true : null,
+      Fields: 'DateCreated',
       StartIndex: opts.startIndex ?? 0,
       Limit: opts.limit ?? 100,
     });
