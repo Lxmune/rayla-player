@@ -207,4 +207,18 @@ describe('SettingsScreen appearance, behavior and navigation', () => {
     render(SettingsScreen, { context });
     expect(screen.getByText(/^Version \d/)).toBeTruthy();
   });
+  it('Downloads section: Wi-Fi only toggle persists; remove all asks for confirmation', async () => {
+    const { app, dl, context, ready } = buildApp();
+    await ready();
+    dl.records = [{ id: 'a', path: '/dl/a.flac', bytes: 100, addedAt: '2026-01-01T00:00:00Z', item: { Id: 'a', Name: 'A', Type: 'Audio' } }];
+    await app.core.downloads.load();
+    render(SettingsScreen, { context });
+    await fireEvent.click(screen.getByRole('switch', { name: /Download on Wi-Fi only/ }));
+    expect(app.core.settings.current.downloads.wifiOnly).toBe(true);
+    await fireEvent.click(screen.getByRole('button', { name: 'Remove all downloads' }));
+    expect(dl.deleted).toEqual([]);
+    await fireEvent.click(screen.getByRole('button', { name: 'Click again to confirm' }));
+    await flush();
+    expect(dl.deleted).toEqual(['a']);
+  });
 });

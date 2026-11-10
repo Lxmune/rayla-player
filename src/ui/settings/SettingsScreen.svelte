@@ -7,6 +7,7 @@
   import AppearanceSection from './AppearanceSection.svelte';
   import BehaviorSection from './BehaviorSection.svelte';
   import CacheSection from './CacheSection.svelte';
+  import DownloadsSection from './DownloadsSection.svelte';
   import DiscordSection from './DiscordSection.svelte';
   import EqSection from './EqSection.svelte';
   import GainSection from './GainSection.svelte';
@@ -80,6 +81,7 @@
       {#if shown('processing')}<ProcessingSection />{/if}
       {#if shown('streaming')}<StreamingSection />{/if}
       {#if shown('cache')}<CacheSection />{/if}
+      {#if shown('downloads')}<DownloadsSection />{/if}
       {#if shown('scrobbling')}<ScrobbleSection />{/if}
       {#if shown('discord')}<DiscordSection />{/if}
       {#if shown('diagnostics')}<DiagnosticsSection />{/if}

@@ -434,6 +434,11 @@ export class SettingsStore {
     this.save();
   }
 
+  async updateDownloads(change: Change<DownloadSettings>): Promise<void> {
+    this.set({ ...this.current, downloads: parseDownloads(applyChange(this.current.downloads, change)) });
+    this.save();
+  }
+
   async setScrobbleListenBrainz(enabled: boolean): Promise<void> {
     this.set({ ...this.current, scrobbleListenBrainz: enabled });
     this.save();

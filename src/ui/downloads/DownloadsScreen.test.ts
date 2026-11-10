@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, describe, expect, it } from 'vitest';
+import { parseBaseItem } from '../../lib/jellyfin/models';
 import { flush, track } from '../../lib/test-support';
 import { buildApp } from '../settings/test-app';
 import DownloadsScreen from './DownloadsScreen.svelte';
@@ -98,5 +99,21 @@ describe('DownloadsScreen', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Play all' }));
     await flush();
     expect(b.app.core.player.queue).toHaveLength(2);
+  });
+  it('lists kept collections with progress and a remove action', async () => {
+    const b = await setup();
+    const client = b.app.core.sessions.client!;
+    client.tracksOf = async () => [track('a'), track('b')];
+    b.dl.manual = false;
+    const album = parseBaseItem({ Id: 'al9', Name: 'Kept One', Type: 'MusicAlbum' });
+    render(DownloadsScreen, { context: b.context });
+    await b.app.core.kept.setKept(album, true);
+    await b.app.core.downloads.idle;
+    await flush();
+    expect(await screen.findByText('Kept One')).toBeTruthy();
+    expect(screen.getByText(/2\/2 tracks/)).toBeTruthy();
+    await fireEvent.click(screen.getByRole('button', { name: /Stop keeping Kept One offline/ }));
+    await flush();
+    expect(b.app.core.kept.isKept('al9')).toBe(false);
   });
 });

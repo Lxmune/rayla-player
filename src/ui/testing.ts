@@ -50,6 +50,7 @@ export function buildApp(routes: Record<string, unknown> = {}) {
     downloadsStart: dl.downloadsStart,
     downloadsCancel: dl.downloadsCancel,
     downloadsDelete: dl.downloadsDelete,
+    downloadsSetDir: dl.downloadsSetDir,
     onDownloadProgress: dl.onDownloadProgress,
     engineInitError: async () => null,
   };

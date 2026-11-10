@@ -17,6 +17,7 @@ export const SECTIONS: SectionInfo[] = [
   { id: 'processing', label: 'Processing', keywords: 'dsp convolution impulse response crossfeed compressor dynamics loudness resample dither crossfade gapless bit-perfect' },
   { id: 'streaming', label: 'Streaming', keywords: 'bitrate transcode quality dsd dop pcm' },
   { id: 'cache', label: 'Cache', keywords: 'stream cache clear storage disk size limit' },
+  { id: 'downloads', label: 'Downloads', keywords: 'offline wifi wi-fi mobile data cellular storage folder sd card battery optimisation optimization keep' },
   { id: 'scrobbling', label: 'Scrobbling', keywords: 'listenbrainz last.fm lastfm scrobble history token' },
   { id: 'discord', label: 'Discord', keywords: 'rich presence activity application id status' },
   { id: 'diagnostics', label: 'Diagnostics', keywords: 'diagnostics log debug errors support copy report' },

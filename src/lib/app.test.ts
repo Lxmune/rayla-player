@@ -35,7 +35,7 @@ function build(android?: { enabled: boolean; bridge: any }) {
     downloadsStart: dl.downloadsStart,
     downloadsCancel: dl.downloadsCancel,
     downloadsDelete: dl.downloadsDelete,
-    downloadsSetDir: async () => {},
+    downloadsSetDir: dl.downloadsSetDir,
     onDownloadProgress: dl.onDownloadProgress,
     engineInitError: async () => null,
   };

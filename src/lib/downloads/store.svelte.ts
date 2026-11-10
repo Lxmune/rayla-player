@@ -6,12 +6,13 @@ import type { JellyfinClient } from '../jellyfin/client';
 import { baseItemToJson, firstMediaSource, formatBytes, parseBaseItem, type BaseItem } from '../jellyfin/models';
 import { errorMessage, type EngineErrors } from '../player/errors.svelte';
 import type { KeyValueStore } from '../platform';
+import type { NetworkType } from '../android';
 
 export { formatBytes };
 
 export type DownloadsEngine = Pick<
   Ipc,
-  'downloadsList' | 'downloadsStart' | 'downloadsCancel' | 'downloadsDelete' | 'onDownloadProgress'
+  'downloadsList' | 'downloadsStart' | 'downloadsCancel' | 'downloadsDelete' | 'downloadsSetDir' | 'onDownloadProgress'
 >;
 
 /** A fully downloaded track. Only complete files get an entry. */
@@ -67,6 +68,12 @@ export interface DownloadsDeps {
   kv?: KeyValueStore;
   /** Active profile id, or null when signed out. */
   profileId?: () => string | null;
+  /** With `wifiOnly`, queued downloads wait while the network is cellular or down. */
+  network?: {
+    get(): Promise<NetworkType>;
+    onChange(cb: (type: NetworkType) => void): Promise<() => void> | (() => void);
+  };
+  wifiOnly?: () => boolean;
 }
 
 /** kv key of a profile's unfinished downloads. */
@@ -94,6 +101,9 @@ export class DownloadsStore {
   /** Queue order of `active`. */
   activeList = $derived([...this.active.entries()].map(([id, p]) => ({ id, ...p })));
 
+  /** True while the queue is held back by "Wi-Fi only". */
+  waitingForWifi = $state(false);
+
   /** Completes once the index has been read (never rejects). */
   ready: Promise<void> = Promise.resolve();
 
@@ -105,6 +115,9 @@ export class DownloadsStore {
   private pumping = false;
   private idlePromise: Promise<void> = Promise.resolve();
   private unlisten: (() => void) | null = null;
+  private unlistenNetwork: (() => void) | null = null;
+  private networkType: NetworkType = 'other';
+  private wake: (() => void) | null = null;
 
   constructor(deps: DownloadsDeps) {
     this.deps = deps;
@@ -135,6 +148,17 @@ export class DownloadsStore {
         // progress is cosmetic
       }
     }
+    if (!this.unlistenNetwork && this.deps.network) {
+      try {
+        this.networkType = await this.deps.network.get();
+        this.unlistenNetwork = await this.deps.network.onChange((t) => {
+          this.networkType = t;
+          this.recheck();
+        });
+      } catch {
+        // unknown network: never block
+      }
+    }
     try {
       const records = await engine.downloadsList();
       this.entries = new Map(records.map((r) => [r.id, entryFromRecord(r)]));
@@ -147,6 +171,34 @@ export class DownloadsStore {
   dispose(): void {
     this.unlisten?.();
     this.unlisten = null;
+    this.unlistenNetwork?.();
+    this.unlistenNetwork = null;
+  }
+
+  /** Re-evaluates the Wi-Fi gate (network or setting changed). */
+  recheck(): void {
+    this.wake?.();
+  }
+
+  private blocked(): boolean {
+    if (!this.deps.wifiOnly?.()) return false;
+    return this.networkType === 'cellular' || this.networkType === 'none';
+  }
+
+  private async waitForNetwork(): Promise<void> {
+    while (this.blocked()) {
+      this.waitingForWifi = true;
+      await new Promise<void>((resolve) => {
+        this.wake = resolve;
+      });
+      this.wake = null;
+    }
+    this.waitingForWifi = false;
+  }
+
+  /** Folder for new downloads (null = app default); rejects when unusable. */
+  setDir(dir: string | null): Promise<void> {
+    return this.deps.engine.downloadsSetDir(dir);
   }
 
   isDownloaded(id: string): boolean {
@@ -189,6 +241,7 @@ export class DownloadsStore {
     this.pumping = true;
     try {
       while (this.queue.length > 0) {
+        await this.waitForNetwork();
         const id = this.queue.shift() as string;
         const progress = this.active.get(id);
         if (!progress) continue; // cancelled while waiting
@@ -196,6 +249,7 @@ export class DownloadsStore {
       }
     } finally {
       this.pumping = false;
+      this.waitingForWifi = false;
     }
   }
 

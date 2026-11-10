@@ -312,3 +312,49 @@ describe('DownloadsStore', () => {
     expect(formatBytes(2048)).toBe('2.0 KB');
   });
 });
+
+describe('DownloadsStore Wi-Fi only', () => {
+  it('waits on cellular and continues when the network changes', async () => {
+    const engine = new FakeDownloadsEngine();
+    const client = fakeClient(new FakeHttp());
+    let emit: (t: 'wifi' | 'cellular' | 'none' | 'other') => void = () => {};
+    let wifiOnly = true;
+    const store = new DownloadsStore({
+      engine,
+      client: () => client,
+      wifiOnly: () => wifiOnly,
+      network: { get: async () => 'cellular', onChange: (cb) => ((emit = cb), () => {}) },
+    });
+    await store.load();
+    void store.download([track('a')]);
+    await flush();
+    expect(engine.started).toHaveLength(0);
+    expect(store.waitingForWifi).toBe(true);
+    emit('wifi');
+    await store.idle;
+    expect(engine.started.map((r) => r.id)).toEqual(['a']);
+    expect(store.waitingForWifi).toBe(false);
+    // Turning the setting off releases a waiting queue.
+    emit('none');
+    void store.download([track('b')]);
+    await flush();
+    expect(engine.started).toHaveLength(1);
+    wifiOnly = false;
+    store.recheck();
+    await store.idle;
+    expect(engine.started.map((r) => r.id)).toEqual(['a', 'b']);
+  });
+
+  it('never blocks on desktop (other)', async () => {
+    const engine = new FakeDownloadsEngine();
+    const store = new DownloadsStore({
+      engine,
+      client: () => fakeClient(new FakeHttp()),
+      wifiOnly: () => true,
+      network: { get: async () => 'other', onChange: () => () => {} },
+    });
+    await store.load();
+    await store.download([track('a')]);
+    expect(engine.started).toHaveLength(1);
+  });
+});

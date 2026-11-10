@@ -345,6 +345,14 @@ export class FakeDownloadsEngine {
       p.reject('cancelled');
     }
   };
+  /** Folders passed to downloadsSetDir, in order. */
+  readonly dirs: (string | null)[] = [];
+  /** Makes the next downloadsSetDir reject with this message. */
+  failSetDir: string | null = null;
+  downloadsSetDir = async (dir: string | null) => {
+    if (this.failSetDir !== null) throw new Error(this.failSetDir);
+    this.dirs.push(dir);
+  };
   downloadsDelete = async (id: string) => {
     this.deleted.push(id);
     this.records = this.records.filter((r) => r.id !== id);

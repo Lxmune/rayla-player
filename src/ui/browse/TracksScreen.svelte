@@ -65,6 +65,7 @@
   const allDownloaded = $derived(
     tracks.length > 0 && tracks.every((t) => app.core.downloads.isDownloaded(t.id)),
   );
+  const keptOffline = $derived(app.core.kept.isKept(item.id));
   const favorite = $derived(app.core.favorites.isFavorite(item));
 
   const kind = $derived.by(() => {
@@ -152,6 +153,13 @@
       {:else}
         <Button icon="download" disabled={tracks.length === 0} onclick={() => act.download(tracks)}>Download</Button>
       {/if}
+      <Button
+        icon={keptOffline ? 'check' : undefined}
+        disabled={!app.core.sessions.client}
+        onclick={() => void app.core.kept.toggle(item)}
+      >
+        {keptOffline ? 'Kept offline' : 'Keep offline'}
+      </Button>
       <Button icon="mix" onclick={() => void act.instantMix(item)}>Instant mix</Button>
       <IconButton icon="more" label="More options" onclick={(e) => ui?.openMenu(e, menuFor(item))} />
     {/snippet}

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { getContext } from 'svelte';
   import { getApp } from '../../lib/app.svelte';
   import { formatBytes, progressFraction, type DownloadEntry } from '../../lib/downloads/store.svelte';
   import Artwork from '../common/Artwork.svelte';
@@ -7,11 +8,17 @@
   import IconButton from '../common/IconButton.svelte';
   import Skeleton from '../common/Skeleton.svelte';
   import { useActions } from '../common/actions';
+  import { ROUTER_KEY, UI_KEY, type Router, type UiState } from '../shell/router.svelte';
   import { artistOf, filterEntries, groupEntries, sortEntries, trackCount, type DownloadSort } from './organize';
 
   const core = getApp().core;
   const dl = core.downloads;
   const actions = useActions();
+  const router = getContext<Router | undefined>(ROUTER_KEY);
+  const ui = getContext<UiState | undefined>(UI_KEY);
+  const kept = core.kept;
+  kept.ensureLoaded();
+  const keptRows = $derived(kept.collections.map((c) => ({ c, ...kept.progress(c.item.id) })));
 
   let confirming = $state(false);
   let query = $state('');
@@ -23,7 +30,9 @@
   const groups = $derived(grouped ? groupEntries(filtered, sort) : []);
   /** Entries in the order they are shown (what Play uses as the queue). */
   const flat = $derived(grouped ? groups.flatMap((g) => g.entries) : sortEntries(filtered, sort));
-  const isEmpty = $derived(dl.activeList.length === 0 && failures.length === 0 && dl.sortedEntries.length === 0);
+  const isEmpty = $derived(
+    dl.activeList.length === 0 && failures.length === 0 && dl.sortedEntries.length === 0 && keptRows.length === 0,
+  );
 
   const subtitle = (e: DownloadEntry) => [artistOf(e), e.item.album].filter(Boolean).join(' · ');
 
@@ -54,9 +63,14 @@
         <p class="total">{trackCount(dl.sortedEntries.length)} · {formatBytes(dl.totalBytes)}</p>
       {/if}
     </div>
-    {#if flat.length > 0}
-      <Button icon="play" primary onclick={() => play(flat)}>Play all</Button>
-    {/if}
+    <div class="hactions">
+      {#if router}
+        <button type="button" class="btn" onclick={() => router.go('settings')}>Download settings</button>
+      {/if}
+      {#if flat.length > 0}
+        <Button icon="play" primary onclick={() => play(flat)}>Play all</Button>
+      {/if}
+    </div>
   </header>
 
   {#if !dl.loaded}
@@ -73,6 +87,40 @@
     </div>
   {/if}
 
+  {#if keptRows.length > 0}
+    <section>
+      <div class="head">
+        <h2>Kept offline</h2>
+        {#if kept.syncing}<span class="sub">Syncing…</span>{/if}
+      </div>
+      <ul>
+        {#each keptRows as r (r.c.item.id)}
+          <li class="item active">
+            <Artwork item={r.c.item} size={40} />
+            <div class="info">
+              <span class="name">{r.c.item.name}</span>
+              <span class="sub">
+                {r.c.item.type === 'Playlist' ? 'Playlist' : 'Album'} · {r.total === 0 ? 'Not synced yet' : `${r.have}/${r.total} tracks`}
+              </span>
+              {#if r.total > 0 && r.have < r.total}
+                <progress aria-label={`Syncing ${r.c.item.name}`} value={r.have} max={r.total}></progress>
+              {/if}
+            </div>
+            <button
+              type="button"
+              class="btn"
+              aria-label={`Stop keeping ${r.c.item.name} offline`}
+              onclick={() => {
+                void kept.setKept(r.c.item, false);
+                ui?.toast(`${r.c.item.name} is no longer kept offline`);
+              }}>Remove</button
+            >
+          </li>
+        {/each}
+      </ul>
+    </section>
+  {/if}
+
   {#if dl.activeList.length > 0}
     <section>
       <div class="head">
@@ -87,7 +135,7 @@
             <div class="info">
               <span class="name">{a.item.name}</span>
               <span class="sub">
-                {#if !a.started}Waiting…{:else if frac === null}{formatBytes(a.receivedBytes)}{:else}{Math.round(frac * 100)}% · {formatBytes(a.receivedBytes)} of {formatBytes(a.totalBytes)}{/if}
+                {#if !a.started}{dl.waitingForWifi ? 'Waiting for Wi-Fi' : 'Waiting…'}{:else if frac === null}{formatBytes(a.receivedBytes)}{:else}{Math.round(frac * 100)}% · {formatBytes(a.receivedBytes)} of {formatBytes(a.totalBytes)}{/if}
               </span>
               {#if frac === null}
                 <progress aria-label={`Downloading ${a.item.name}`}></progress>
@@ -198,6 +246,7 @@
   h1 { font-size: var(--text-xl); margin: 0; font-weight: var(--weight-semibold); }
   h2 { font-size: var(--text-sm); text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); margin: 0; font-weight: var(--weight-semibold); }
   h3 { margin: 0; font-size: var(--text-md); font-weight: var(--weight-semibold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hactions { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; justify-content: flex-end; }
   .total { color: var(--text-muted); margin: var(--space-1) 0 0; font-size: var(--text-sm); }
   .loading { display: flex; flex-direction: column; gap: var(--space-2); }
   .empty { display: flex; flex-direction: column; align-items: center; gap: var(--space-2); padding: var(--space-7) var(--space-4); color: var(--text-faint); text-align: center; }

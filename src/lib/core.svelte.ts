@@ -5,6 +5,7 @@
 
 import { untrack } from 'svelte';
 import { DownloadsStore, type DownloadsEngine } from './downloads/store.svelte';
+import { KeptStore } from './downloads/kept.svelte';
 import { TrackStates } from './track-states.svelte';
 import { FavoritesStore } from './jellyfin/favorites.svelte';
 import { JellyfinRemote, RemoteController } from './jellyfin/remote';
@@ -46,6 +47,8 @@ export interface Core {
   player: PlayerController;
   sleep: SleepTimer;
   downloads: DownloadsStore;
+  /** Albums and playlists kept offline. */
+  kept: KeptStore;
   /** Download / stream-cache availability per track id. */
   trackStates: TrackStates;
   favorites: FavoritesStore;
@@ -78,6 +81,15 @@ export function createCore(deps: CoreDeps): Core {
     errors,
     kv: deps.kv,
     profileId: () => sessions.active?.id ?? null,
+    network: deps.network,
+    wifiOnly: () => settings.current.downloads.wifiOnly,
+  });
+  const kept = new KeptStore({
+    downloads,
+    client: () => sessions.client,
+    kv: deps.kv,
+    profileId: () => sessions.active?.id ?? null,
+    network: deps.network,
   });
   const player = new PlayerController({
     engine: deps.engine,
@@ -164,6 +176,19 @@ export function createCore(deps: CoreDeps): Core {
   // Queue, order, repeat and the current entry changes save immediately.
   const stopResumeEffect = $effect.root(() => {
     $effect(() => {
+      void settings.current.downloads.wifiOnly;
+      untrack(() => downloads.recheck());
+    });
+    // A (new) profile signs in: load its kept collections and sync them.
+    $effect(() => {
+      void sessions.active?.id;
+      untrack(() => {
+        if (!started) return;
+        kept.ensureLoaded();
+        void kept.sync();
+      });
+    });
+    $effect(() => {
       void [player.shuffle, player.radio];
       untrack(() => void settings.refreshDsp());
     });
@@ -189,6 +214,8 @@ export function createCore(deps: CoreDeps): Core {
     }
     if (initError) errors.report(`Audio engine failed to start: ${initError}`);
     else await settings.pushToEngine();
+    const downloadDir = settings.current.downloads.dir;
+    if (downloadDir !== null) await errors.guard(() => deps.engine.downloadsSetDir(downloadDir));
 
     await player.attach();
     await downloads.load();
@@ -197,6 +224,8 @@ export function createCore(deps: CoreDeps): Core {
     void downloads.resume();
     resumeReady = true;
     started = true;
+    kept.ensureLoaded();
+    void kept.start();
     await remote.sync(sessions.client);
   }
 
@@ -210,10 +239,11 @@ export function createCore(deps: CoreDeps): Core {
     await remote.stop();
     player.dispose();
     downloads.dispose();
+    kept.dispose();
     trackStates.dispose();
   }
 
-  return { sessions, settings, player, sleep, downloads, trackStates, favorites, remote, errors, start, dispose };
+  return { sessions, settings, player, sleep, downloads, kept, trackStates, favorites, remote, errors, start, dispose };
 }
 
 /** The real app: Tauri IPC, Rust-routed fetch, localStorage, OS keychain. */

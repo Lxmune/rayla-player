@@ -33,6 +33,7 @@ function build(opts: { initError?: string | null; kv?: ReturnType<typeof memoryK
     downloadsStart: dl.downloadsStart,
     downloadsCancel: dl.downloadsCancel,
     downloadsDelete: dl.downloadsDelete,
+    downloadsSetDir: dl.downloadsSetDir,
     onDownloadProgress: dl.onDownloadProgress,
     engineInitError: async () => opts.initError ?? null,
   };
