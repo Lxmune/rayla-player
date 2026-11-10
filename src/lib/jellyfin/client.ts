@@ -262,7 +262,8 @@ export class JellyfinClient {
       Filters: filters(opts),
       SortBy: opts.sortBy ?? 'SortName',
       SortOrder: opts.descending ? 'Descending' : 'Ascending',
-      Fields: ITEM_FIELDS,
+      // Genres: smart playlists filter tracks by genre locally.
+      Fields: `${ITEM_FIELDS},Genres`,
       StartIndex: opts.startIndex ?? 0,
       Limit: opts.limit ?? 100,
     });
