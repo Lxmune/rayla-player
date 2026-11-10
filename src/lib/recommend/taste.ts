@@ -1,6 +1,7 @@
 // Taste profile and scoring for recommendations. Pure functions: no I/O, `now` injected.
 
 import type { BaseItem, NameId } from '../jellyfin/models';
+import { NO_SKIPS, type SkipProfile } from './skip-profile';
 
 /** One weighted feature (genre, tag or artist), 0..1 after normalising. */
 export interface Feature {
@@ -72,7 +73,7 @@ export function artistsOf(item: BaseItem): NameId[] {
 }
 
 /** Builds the profile from played tracks (duplicates by id are merged). */
-export function buildTaste(history: BaseItem[], now: number): Taste {
+export function buildTaste(history: BaseItem[], now: number, skips: SkipProfile = NO_SKIPS): Taste {
   const seen = new Map<string, BaseItem>();
   for (const t of history) if (t.id !== '' && !seen.has(t.id)) seen.set(t.id, t);
   const taste: Taste = {
@@ -83,8 +84,14 @@ export function buildTaste(history: BaseItem[], now: number): Taste {
     trackPlays: new Map(),
     size: seen.size,
   };
+  const artistPlays = new Map<string, number>();
+  const genrePlays = new Map<string, number>();
+  const plays = (m: Map<string, number>, k: string, n: number) => m.set(k, (m.get(k) ?? 0) + n);
   for (const t of seen.values()) {
     const w = playWeight(t, now);
+    const n = Math.max(1, t.playCount);
+    for (const g of t.genres) plays(genrePlays, keyOf(g.name), n);
+    for (const a of artistsOf(t)) plays(artistPlays, keyOf(a.name), n);
     for (const g of t.genres) add(taste.genres, g.name, g.id, w);
     for (const tag of t.tags) add(taste.tags, tag, '', w);
     for (const a of artistsOf(t)) add(taste.artists, a.name, a.id, w);
@@ -94,6 +101,11 @@ export function buildTaste(history: BaseItem[], now: number): Taste {
   normalise(taste.genres);
   normalise(taste.tags);
   normalise(taste.artists);
+  // Skipped a lot relative to played: the feature counts for less (never below half).
+  if (skips.size > 0) {
+    for (const f of taste.genres.values()) f.weight *= skips.factor('genre', f.key, genrePlays.get(f.key) ?? 0);
+    for (const f of taste.artists.values()) f.weight *= skips.factor('artist', f.key, artistPlays.get(f.key) ?? 0);
+  }
   return taste;
 }
 
@@ -172,7 +184,14 @@ export function scoreItem(taste: Taste, item: BaseItem, similar: Map<string, num
 export function rank(
   taste: Taste,
   items: BaseItem[],
-  opts: { limit: number; maxPerArtist?: number; similar?: Map<string, number>; exclude?: Set<string> },
+  opts: {
+    limit: number;
+    maxPerArtist?: number;
+    similar?: Map<string, number>;
+    exclude?: Set<string>;
+    /** Tracks skipped repeatedly are dropped. */
+    skips?: SkipProfile;
+  },
 ): Scored[] {
   const maxPer = opts.maxPerArtist ?? 2;
   const seen = new Set(opts.exclude ?? []);
@@ -180,6 +199,7 @@ export function rank(
   for (const item of items) {
     if (item.id === '' || seen.has(item.id)) continue;
     seen.add(item.id);
+    if (opts.skips?.isSkipped(item.id)) continue;
     const s = scoreItem(taste, item, opts.similar);
     if (s.score > 0) scored.push(s);
   }
@@ -243,7 +263,7 @@ const daysSince = (iso: string | null, now: number): number => {
 export function rediscoverTracks(
   history: BaseItem[],
   now: number,
-  opts: { limit: number; days?: number; minPlays?: number },
+  opts: { limit: number; days?: number; minPlays?: number; skips?: SkipProfile },
 ): BaseItem[] {
   const days = opts.days ?? 90;
   const minPlays = opts.minPlays ?? 3;
@@ -252,6 +272,7 @@ export function rediscoverTracks(
     .filter((t) => {
       if (t.id === '' || t.type !== 'Audio' || seen.has(t.id)) return false;
       seen.add(t.id);
+      if (opts.skips?.isSkipped(t.id)) return false;
       return t.playCount >= minPlays && daysSince(t.lastPlayed, now) >= days;
     })
     .sort((a, b) => b.playCount - a.playCount || a.name.localeCompare(b.name))
@@ -265,12 +286,16 @@ export function staleFavourites(items: BaseItem[], now: number, opts: { limit: n
 }
 
 /** Never-played tracks by the user's top artists, at most `perArtist` of each. */
-export function deepCuts(taste: Taste, tracks: BaseItem[], opts: { limit: number; perArtist?: number }): BaseItem[] {
+export function deepCuts(
+  taste: Taste,
+  tracks: BaseItem[],
+  opts: { limit: number; perArtist?: number; skips?: SkipProfile },
+): BaseItem[] {
   const per = opts.perArtist ?? 4;
   const count = new Map<string, number>();
   const seen = new Set<string>();
   const known = tracks
-    .filter((t) => t.id !== '' && t.playCount === 0 && !seen.has(t.id) && seen.add(t.id))
+    .filter((t) => t.id !== '' && t.playCount === 0 && !opts.skips?.isSkipped(t.id) && !seen.has(t.id) && seen.add(t.id))
     .map((t) => {
       const a = artistsOf(t).map((x) => taste.artists.get(keyOf(x.name))).find(Boolean);
       return { t, w: a?.weight ?? 0, key: a?.key ?? '' };

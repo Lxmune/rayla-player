@@ -29,7 +29,7 @@
   const greeting = hour < 5 ? 'Good night' : hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
 
   function loadAll(client: JellyfinClient, fresh = false) {
-    void recs.load(() => forYou(client, Date.now(), fresh));
+    void recs.load(() => forYou(client, Date.now(), fresh, app.skips.profile()));
     void played.load(
       async () =>
         (await client.albums({ playedOnly: true, sortBy: 'DatePlayed', descending: true, limit: 20 })).items,

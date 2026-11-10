@@ -2,6 +2,7 @@
   import { untrack } from 'svelte';
   import { getApp } from '../../lib/app.svelte';
   import type { BaseItem } from '../../lib/jellyfin/models';
+  import { buildRadio } from '../../lib/recommend/radio';
   import Button from '../common/Button.svelte';
   import Card from '../common/Card.svelte';
   import Grid from '../common/Grid.svelte';
@@ -47,6 +48,18 @@
     });
   });
 
+  async function startRadio() {
+    const client = app.core.sessions.client;
+    if (!client) return;
+    try {
+      const radio = await buildRadio(client, { kind: 'artist', artist: item, skips: app.skips.profile() });
+      if (!radio) app.core.errors.report('No radio available for this artist.');
+      else await app.core.player.playRadio(radio.seed, radio.more, radio.label);
+    } catch (e) {
+      app.core.errors.report(e);
+    }
+  }
+
   const isSingle = (a: BaseItem) => a.childCount !== null && a.childCount <= 6;
   /** Newest first. */
   const discography = $derived(
@@ -79,6 +92,7 @@
       <IconButton primary size={22} icon="play" label="Play" onclick={() => void act.play(item)} />
       <Button icon="shuffle" onclick={() => void act.play(item, { shuffle: true })}>Shuffle all</Button>
       <Button icon="mix" onclick={() => void act.instantMix(item)}>Instant mix</Button>
+      <Button icon="signal" onclick={() => void startRadio()}>Artist radio</Button>
       <IconButton
         icon={favorite ? 'heartFill' : 'heart'}
         label={favorite ? 'Remove artist from favorites' : 'Add artist to favorites'}

@@ -16,6 +16,7 @@ import {
   type Scored,
   type Taste,
 } from './taste';
+import { NO_SKIPS, type SkipProfile } from './skip-profile';
 
 export interface GenreShelf {
   genre: string;
@@ -51,12 +52,12 @@ interface Base {
 const cache = new WeakMap<JellyfinClient, { at: number; value: Base }>();
 const pending = new WeakMap<JellyfinClient, Promise<Base>>();
 
-function baseFor(client: JellyfinClient, now: number, fresh: boolean): Promise<Base> {
+function baseFor(client: JellyfinClient, now: number, fresh: boolean, skips: SkipProfile = NO_SKIPS): Promise<Base> {
   const hit = cache.get(client);
   if (!fresh && hit && now - hit.at < CACHE_MS) return Promise.resolve(hit.value);
   const running = pending.get(client);
   if (!fresh && running) return running;
-  const p = computeBase(client, now)
+  const p = computeBase(client, now, skips)
     .then((value) => {
       cache.set(client, { at: now, value });
       return value;
@@ -69,17 +70,28 @@ function baseFor(client: JellyfinClient, now: number, fresh: boolean): Promise<B
 }
 
 /** Cached per client for a while; `fresh` recomputes (pull to refresh / refresh button). */
-export async function forYou(client: JellyfinClient, now = Date.now(), fresh = false): Promise<ForYou> {
-  return (await baseFor(client, now, fresh)).forYou;
+export async function forYou(
+  client: JellyfinClient,
+  now = Date.now(),
+  fresh = false,
+  skips: SkipProfile = NO_SKIPS,
+): Promise<ForYou> {
+  return (await baseFor(client, now, fresh, skips)).forYou;
 }
 
-async function computeBase(client: JellyfinClient, now: number): Promise<Base> {
+/** Taste, history and similar-artist seeds (shared with Discover) for radio. */
+export async function radioBase(client: JellyfinClient, now = Date.now(), skips: SkipProfile = NO_SKIPS) {
+  const { taste, history, seeds } = await baseFor(client, now, false, skips);
+  return { taste, history, seeds };
+}
+
+async function computeBase(client: JellyfinClient, now: number, skips: SkipProfile): Promise<Base> {
   const [most, recent] = await Promise.all([
     client.listeningHistory({ sortBy: 'PlayCount', limit: 300 }),
     client.listeningHistory({ sortBy: 'DatePlayed', limit: 150 }),
   ]);
   const history = [...most.items, ...recent.items];
-  const taste = buildTaste(history, now);
+  const taste = buildTaste(history, now, skips);
   if (taste.size < MIN_HISTORY) return { taste, history, seeds: [], forYou: EMPTY_FOR_YOU };
 
   const genres = top(taste.genres, 4, true);
@@ -97,7 +109,7 @@ async function computeBase(client: JellyfinClient, now: number): Promise<Base> {
     similar.ids.length > 0 ? ((await client.albumsByArtists(similar.ids, 60).catch(() => null))?.items ?? []) : [];
 
   const albumPool = [...(genreAlbums?.items ?? []), ...similarAlbums];
-  const albums = rank(taste, albumPool, { limit: 16, similar: similar.bonus });
+  const albums = rank(taste, albumPool, { limit: 16, similar: similar.bonus, skips });
   const shown = new Set(albums.map((s) => s.item.id));
   const byGenre: GenreShelf[] = [];
   for (const g of genres.slice(0, 3)) {
@@ -106,7 +118,7 @@ async function computeBase(client: JellyfinClient, now: number): Promise<Base> {
     ranked.forEach((s) => shown.add(s.item.id));
     if (ranked.length >= 3) byGenre.push({ genre: g.label, albums: ranked });
   }
-  const mix = rank(taste, genreTracks?.items ?? [], { limit: 50, similar: similar.bonus }).map((s) => s.item);
+  const mix = rank(taste, genreTracks?.items ?? [], { limit: 50, similar: similar.bonus, skips }).map((s) => s.item);
 
   return {
     taste,
@@ -178,16 +190,21 @@ const pageCache = new WeakMap<JellyfinClient, { at: number; value: DiscoverPage 
 const soft = async <T>(p: Promise<T>, fallback: T): Promise<T> => p.catch(() => fallback);
 
 /** All Discover sections; cached per client like `forYou`, `fresh` recomputes. */
-export async function discoverPage(client: JellyfinClient, now = Date.now(), fresh = false): Promise<DiscoverPage> {
+export async function discoverPage(
+  client: JellyfinClient,
+  now = Date.now(),
+  fresh = false,
+  skips: SkipProfile = NO_SKIPS,
+): Promise<DiscoverPage> {
   const hit = pageCache.get(client);
   if (!fresh && hit && now - hit.at < CACHE_MS) return hit.value;
-  const base = await baseFor(client, now, fresh);
-  const value = await buildPage(client, base, now);
+  const base = await baseFor(client, now, fresh, skips);
+  const value = await buildPage(client, base, now, skips);
   pageCache.set(client, { at: now, value });
   return value;
 }
 
-async function buildPage(client: JellyfinClient, base: Base, now: number): Promise<DiscoverPage> {
+async function buildPage(client: JellyfinClient, base: Base, now: number, skips: SkipProfile): Promise<DiscoverPage> {
   const { taste, forYou: fy, seeds, history } = base;
   if (taste.size < MIN_HISTORY) return EMPTY_DISCOVER;
 
@@ -240,8 +257,8 @@ async function buildPage(client: JellyfinClient, base: Base, now: number): Promi
     becauseArtist,
     byGenre: fy.byGenre,
     newInGenres: newInTaste(taste, newByGenre.flat(), { limit: 16, exclude: shown }),
-    rediscover: rediscoverTracks(history, now, { limit: 30 }),
-    deepCuts: deepCuts(taste, cutLists.flatMap((p) => p.items), { limit: 30 }),
-    favourites: staleFavourites(favs.items, now, { limit: 30 }),
+    rediscover: rediscoverTracks(history, now, { limit: 30, skips }),
+    deepCuts: deepCuts(taste, cutLists.flatMap((p) => p.items), { limit: 30, skips }),
+    favourites: staleFavourites(favs.items.filter((t) => !skips.isSkipped(t.id)), now, { limit: 30 }),
   };
 }

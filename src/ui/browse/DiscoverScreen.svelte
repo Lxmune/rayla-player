@@ -3,6 +3,7 @@
   import { getApp } from '../../lib/app.svelte';
   import type { JellyfinClient } from '../../lib/jellyfin/client';
   import { discoverPage, type DiscoverPage } from '../../lib/recommend/recommender';
+  import { buildRadio } from '../../lib/recommend/radio';
   import Button from '../common/Button.svelte';
   import Icon from '../common/Icon.svelte';
   import IconButton from '../common/IconButton.svelte';
@@ -18,7 +19,7 @@
   const page = new Resource<DiscoverPage>();
 
   function load(client: JellyfinClient, fresh = false) {
-    void page.load(() => discoverPage(client, Date.now(), fresh));
+    void page.load(() => discoverPage(client, Date.now(), fresh, app.skips.profile()));
   }
 
   $effect(() => {
@@ -29,6 +30,22 @@
   function refresh() {
     const client = app.core.sessions.client;
     if (client) load(client, true);
+  }
+
+  let startingRadio = $state(false);
+  async function startRadio() {
+    const client = app.core.sessions.client;
+    if (!client || startingRadio) return;
+    startingRadio = true;
+    try {
+      const radio = await buildRadio(client, { kind: 'discover', skips: app.skips.profile() });
+      if (!radio) app.core.errors.report('Not enough listening history to start a radio yet.');
+      else await app.core.player.playRadio(radio.seed, radio.more, radio.label);
+    } catch (e) {
+      app.core.errors.report(e);
+    } finally {
+      startingRadio = false;
+    }
   }
 
   const d = $derived(page.data);
@@ -46,6 +63,9 @@
 
 <section class="screen">
   <ScreenHeader title="Discover" subtitle="New music picked from what you listen to">
+    {#if d?.ready}
+      <Button primary icon="play" disabled={startingRadio} onclick={() => void startRadio()}>Start radio</Button>
+    {/if}
     <IconButton icon="refresh" label="Refresh recommendations" onclick={refresh} />
   </ScreenHeader>
 
