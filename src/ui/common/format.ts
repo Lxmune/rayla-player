@@ -12,3 +12,16 @@ export function formatTime(ms: number): string {
 export function plural(n: number, one: string, many = `${one}s`): string {
   return `${n} ${n === 1 ? one : many}`;
 }
+
+/** Stable 0..359 hue for a name (same name, same colour). */
+export function nameHue(name: string): number {
+  let h = 5381;
+  for (let i = 0; i < name.length; i++) h = ((h << 5) + h + name.charCodeAt(i)) | 0;
+  return Math.abs(h) % 360;
+}
+
+/** Deterministic gradient for a name: placeholder art, genre tiles. */
+export function nameGradient(name: string): string {
+  const hue = nameHue(name);
+  return `linear-gradient(135deg, hsl(${hue} 55% 42%), hsl(${(hue + 48) % 360} 60% 24%))`;
+}

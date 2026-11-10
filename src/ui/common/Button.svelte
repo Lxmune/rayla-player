@@ -27,26 +27,42 @@
   .btn {
     display: inline-flex;
     align-items: center;
+    justify-content: center;
     gap: var(--space-2);
     padding: var(--space-2) var(--space-4);
-    border: 1px solid var(--border);
-    border-radius: 999px;
+    min-height: 34px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-full);
     background: transparent;
+    color: var(--text);
     cursor: pointer;
     font-size: var(--text-sm);
-    transition: background var(--transition), border-color var(--transition);
+    font-weight: var(--weight-semibold);
+    white-space: nowrap;
+    transition:
+      background var(--transition),
+      border-color var(--transition),
+      transform var(--duration-fast) var(--ease-out);
   }
   .btn:hover:not(:disabled) {
-    background: var(--surface-2);
+    background: var(--hover);
+    border-color: var(--text-faint);
+  }
+  .btn:active:not(:disabled) {
+    transform: scale(0.97);
   }
   .btn.primary {
     background: var(--accent);
     border-color: var(--accent);
     color: var(--accent-contrast);
-    transition: background var(--accent-transition), color var(--accent-transition);
+    transition:
+      background var(--accent-transition),
+      color var(--accent-transition),
+      transform var(--duration-fast) var(--ease-out);
   }
   .btn.primary:hover:not(:disabled) {
     background: var(--accent);
+    border-color: var(--accent);
     filter: brightness(1.08);
   }
   .btn:disabled {

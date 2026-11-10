@@ -54,26 +54,39 @@
     background: transparent;
     color: var(--text-muted);
     cursor: pointer;
-    transition: color var(--transition), background var(--transition);
+    transition:
+      color var(--transition),
+      background var(--transition),
+      transform var(--duration-fast) var(--ease-out),
+      box-shadow var(--transition);
   }
   .icon-btn:hover:not(:disabled) {
     color: var(--text);
-    background: var(--surface-2);
+    background: var(--hover);
+  }
+  .icon-btn:active:not(:disabled) {
+    transform: scale(0.92);
   }
   .icon-btn.active {
     color: var(--accent);
   }
   .icon-btn.primary {
-    width: 44px;
-    height: 44px;
+    width: 48px;
+    height: 48px;
     background: var(--accent);
     color: var(--accent-contrast);
-    transition: background var(--accent-transition), color var(--accent-transition);
+    box-shadow: 0 4px 18px color-mix(in srgb, var(--accent) 45%, transparent);
+    transition:
+      background var(--accent-transition),
+      color var(--accent-transition),
+      transform var(--duration-fast) var(--ease-out),
+      box-shadow var(--accent-transition);
   }
   .icon-btn.primary:hover:not(:disabled) {
     background: var(--accent);
     color: var(--accent-contrast);
     filter: brightness(1.08);
+    transform: scale(1.05);
   }
   .icon-btn:disabled {
     opacity: 0.35;
