@@ -80,6 +80,18 @@ describe('TrackList', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Play Song B' }));
     expect(played).toEqual([1]);
   });
+
+  it('unnumbered lists show covers, with the play glyph on the cover instead of an empty cell', async () => {
+    const { app } = await signedIn();
+    const tracks = [parseBaseItem(trackJson('a', 'Song A')), parseBaseItem(trackJson('b', 'Song B'))];
+    const view = render(TrackList, { props: { tracks, onplay: () => {}, numbered: false }, context: withContext(app).context });
+    expect(view.container.querySelectorAll('.thumb')).toHaveLength(2);
+    expect(view.container.querySelectorAll('.num:not(.on-art)')).toHaveLength(0);
+    view.unmount();
+    const numbered = render(TrackList, { props: { tracks, onplay: () => {} }, context: withContext(app).context });
+    expect(numbered.container.querySelectorAll('.thumb')).toHaveLength(0);
+    expect(numbered.container.querySelectorAll('.num:not(.on-art)')).toHaveLength(2);
+  });
 });
 
 describe('SongsScreen', () => {

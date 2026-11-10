@@ -78,15 +78,23 @@
   {ondblclick}
 >
   <button type="button" class="main" onclick={onplay} aria-label={`Play ${track.name}`}>
-    <span class="num">
-      {#if playing}
-        <span class="eq" aria-hidden="true"><i></i><i></i><i></i></span>
-      {:else}
-        <span class="n">{number ?? ''}</span>
-      {/if}
-      <span class="p"><Icon name="play" size={14} /></span>
-    </span>
-    {#if showArt}<span class="thumb" aria-hidden="true"><Artwork item={track} size={40} /></span>{/if}
+    {#snippet indicator(onArt: boolean)}
+      <span class="num" class:on-art={onArt} class:active={playing}>
+        {#if playing}
+          <span class="eq" aria-hidden="true"><i></i><i></i><i></i></span>
+        {:else}
+          <span class="n">{number ?? ''}</span>
+        {/if}
+        <span class="p"><Icon name="play" size={14} /></span>
+      </span>
+    {/snippet}
+    {#if showArt && number == null}
+      <!-- No number to show: the play / now-playing glyph sits on the cover instead of an empty cell. -->
+      <span class="thumb" aria-hidden="true"><Artwork item={track} size={40} />{@render indicator(true)}</span>
+    {:else}
+      {@render indicator(false)}
+      {#if showArt}<span class="thumb" aria-hidden="true"><Artwork item={track} size={40} /></span>{/if}
+    {/if}
     <span class="text">
       <span class="title">{track.name}</span>
       {#if showArtist}<span class="artist">{artistLine(track)}</span>{/if}
@@ -255,8 +263,26 @@
     animation-duration: 1050ms;
   }
   .thumb {
+    position: relative;
     flex: none;
     display: inline-flex;
+  }
+  .num.on-art {
+    position: absolute;
+    inset: 0;
+    width: auto;
+    border-radius: var(--radius-md);
+    color: var(--text);
+    transition: background var(--duration-fast);
+  }
+  .num.on-art.active,
+  .main:focus-visible .num.on-art {
+    background: rgb(0 0 0 / 0.5);
+  }
+  @media (hover: hover) {
+    .row:hover .num.on-art {
+      background: rgb(0 0 0 / 0.5);
+    }
   }
   .text {
     display: flex;

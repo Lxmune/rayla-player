@@ -9,7 +9,7 @@
     numbered = true,
     showArtist = true,
     showAlbum = false,
-    showArt = false,
+    showArt,
     header = false,
     discs = false,
     playlist,
@@ -23,7 +23,8 @@
     showArtist?: boolean;
     /** Album column (library-wide lists). */
     showAlbum?: boolean;
-    /** Small cover thumbnail in every row. */
+    /** Small cover thumbnail in every row. Defaults to on for unnumbered lists, whose
+        leading cell would otherwise be empty. */
     showArt?: boolean;
     /** Sticky column header (#, Title, Album, duration). */
     header?: boolean;
@@ -34,6 +35,8 @@
     /** Called after the list content changed on the server (e.g. an entry was removed). */
     onchanged?: () => void;
   } = $props();
+
+  const art = $derived(showArt ?? !numbered);
 
   interface Group {
     disc: number | null;
@@ -71,7 +74,7 @@
 <div class="wrap">
   {#if header}
     <div class="head" role="presentation">
-      <span class="h-main"><span class="h-num">#</span><span class="h-title">Title</span></span>
+      <span class="h-main"><span class="h-num" class:art={art && !numbered}>{numbered ? '#' : ''}</span><span class="h-title">Title</span></span>
       {#if showAlbum}<span class="h-album">Album</span>{/if}
       <span class="h-extras"></span>
       <span class="h-fav"></span>
@@ -92,7 +95,7 @@
             number={numbered ? (track.indexNumber ?? i + 1) : null}
             {showArtist}
             {showAlbum}
-            {showArt}
+            showArt={art}
             {playlist}
             {onchanged}
             onplay={() => onplay(i)}
@@ -137,6 +140,10 @@
     flex: none;
     width: var(--tl-num, 32px);
     text-align: center;
+  }
+  /* Unnumbered rows with covers carry their indicator on the 40px cover. */
+  .h-num.art {
+    width: 40px;
   }
   .h-album {
     flex: 0 0 var(--tl-album, 26%);
