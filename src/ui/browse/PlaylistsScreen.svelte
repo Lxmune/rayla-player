@@ -45,6 +45,7 @@
 
 <section class="screen">
   <ScreenHeader title="Playlists" subtitle={pager.total > 0 ? plural(pager.total, 'playlist') : undefined}>
+    <Button icon="filter" onclick={() => router.go('smart')}>Smart playlists</Button>
     <Button icon="plus" primary onclick={() => (creating = !creating)}>New playlist</Button>
   </ScreenHeader>
   {#if creating}

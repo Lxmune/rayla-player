@@ -16,6 +16,15 @@
   import { Resource } from '../common/resource.svelte';
   import { getRouter, getUi } from '../shell/router.svelte';
   import { clearRecentSearches, loadRecentSearches, recordSearch } from './recent-searches';
+  import {
+    applyFilters,
+    DECADES,
+    matchPlaylists,
+    pendingSamples,
+    topResult,
+    type SearchFilters,
+    type SearchKind,
+  } from './search-filters';
 
   const app = getApp();
   const router = getRouter();
@@ -24,14 +33,22 @@
   const menuFor = useItemMenu();
 
   let results = $state.raw<SearchResults | null>(null);
+  let allPlaylists = $state.raw<BaseItem[]>([]);
   let searching = $state(false);
   let error = $state<string | null>(null);
   let seq = 0;
   let recents = $state(loadRecentSearches());
-  let filter = $state<'all' | 'artists' | 'albums' | 'tracks'>('all');
+  let filter = $state<SearchKind>('all');
+  let losslessOnly = $state(false);
+  let hiResOnly = $state(false);
+  let decade = $state<number | null>(null);
+  /** album id -> one of its tracks (media info), or null when it has none. */
+  let samples = $state.raw<ReadonlyMap<string, BaseItem | null>>(new Map());
   const genres = new Resource<BaseItem[]>();
 
   const term = $derived(ui.searchTerm.trim());
+  const filters = $derived<SearchFilters>({ losslessOnly, hiResOnly, decade });
+  const narrowing = $derived(losslessOnly || hiResOnly || decade !== null);
 
   // Debounced search; an older response never overwrites a newer one.
   $effect(() => {
@@ -47,9 +64,10 @@
     searching = true;
     const timer = setTimeout(async () => {
       try {
-        const r = await client.search(q);
+        const [r, pls] = await Promise.all([client.search(q), playlistsOf(client)]);
         if (id === seq) {
           results = r;
+          allPlaylists = pls;
           error = null;
         }
       } catch (e) {
@@ -57,8 +75,49 @@
       } finally {
         if (id === seq) searching = false;
       }
-    }, 300);
+    }, 200);
     return () => clearTimeout(timer);
+  });
+
+  // Playlists are filtered by name locally; the list is fetched once per client.
+  let playlistCache: { client: unknown; list: Promise<BaseItem[]> } | null = null;
+  function playlistsOf(client: NonNullable<typeof app.core.sessions.client>): Promise<BaseItem[]> {
+    if (playlistCache?.client !== client) {
+      const list = client
+        .playlists({ limit: 500 })
+        .then((p) => p.items)
+        .catch(() => [] as BaseItem[]);
+      playlistCache = { client, list };
+    }
+    return playlistCache.list;
+  }
+
+  // Albums have no media info: while a quality filter is on, sample one track per album.
+  $effect(() => {
+    const client = app.core.sessions.client;
+    const r = results;
+    if (!client || !r) return;
+    const todo = untrack(() => pendingSamples(r.albums, filters, samples)).slice(0, 40);
+    if (todo.length === 0) return;
+    let live = true;
+    void (async () => {
+      const next = new Map(untrack(() => samples));
+      const queue = [...todo];
+      const worker = async () => {
+        for (let id = queue.shift(); id !== undefined; id = queue.shift()) {
+          try {
+            next.set(id, (await client.albumTracks(id))[0] ?? null);
+          } catch {
+            next.set(id, null);
+          }
+        }
+      };
+      await Promise.all([worker(), worker(), worker(), worker()]);
+      if (live) samples = next;
+    })();
+    return () => {
+      live = false;
+    };
   });
 
   $effect(() => {
@@ -80,25 +139,25 @@
     recents = [];
   }
 
-  const empty = $derived(
-    results !== null && results.artists.length + results.albums.length + results.tracks.length === 0,
+  const view = $derived(
+    results ? applyFilters(results, matchPlaylists(allPlaylists, term), filters, samples) : null,
   );
-
-  /** Best match: an exact / prefix name match, else the first artist, else the first album. */
-  const top = $derived.by(() => {
-    if (!results) return null;
-    const q = term.toLowerCase();
-    const named = [...results.artists, ...results.albums];
-    return (
-      named.find((i) => i.name.toLowerCase() === q) ??
-      named.find((i) => i.name.toLowerCase().startsWith(q)) ??
-      results.artists[0] ??
-      results.albums[0] ??
-      null
-    );
-  });
-  const topTracks = $derived(results?.tracks.slice(0, 4) ?? []);
-  const sub = (i: BaseItem) => (i.type === 'MusicArtist' ? 'Artist' : 'Album');
+  const empty = $derived(
+    view !== null && view.artists.length + view.albums.length + view.tracks.length + view.playlists.length === 0,
+  );
+  const checking = $derived(
+    results !== null && (losslessOnly || hiResOnly) && pendingSamples(results.albums, filters, samples).length > 0,
+  );
+  const top = $derived(view ? topResult(view, term) : null);
+  const topTracks = $derived(view?.tracks.slice(0, 4) ?? []);
+  const sub = (i: BaseItem) => (i.type === 'MusicArtist' ? 'Artist' : i.type === 'Playlist' ? 'Playlist' : 'Album');
+  const KINDS: readonly [SearchKind, string][] = [
+    ['all', 'All'],
+    ['artists', 'Artists'],
+    ['albums', 'Albums'],
+    ['tracks', 'Tracks'],
+    ['playlists', 'Playlists'],
+  ];
 </script>
 
 <section class="screen">
@@ -150,23 +209,40 @@
       <Skeleton height="200px" radius="var(--radius-lg)" />
       <Skeleton height="200px" radius="var(--radius-lg)" />
     </div>
-  {:else if empty}
-    <p class="muted">No results.</p>
-  {:else if results}
+  {:else if view}
     <div class="chips" role="group" aria-label="Filter results">
-      {#each [['all', 'All'], ['artists', 'Artists'], ['albums', 'Albums'], ['tracks', 'Tracks']] as [id, label] (id)}
-        <button
-          type="button"
-          class="chip"
-          aria-pressed={filter === id}
-          onclick={() => (filter = id as typeof filter)}
-        >
+      {#each KINDS as [id, label] (id)}
+        <button type="button" class="chip" aria-pressed={filter === id} onclick={() => (filter = id)}>
           {label}
         </button>
       {/each}
     </div>
+    <div class="chips toggles" role="group" aria-label="Quality and decade filters">
+      <button type="button" class="chip" aria-pressed={losslessOnly} onclick={() => (losslessOnly = !losslessOnly)}>
+        Lossless only
+      </button>
+      <button type="button" class="chip" aria-pressed={hiResOnly} onclick={() => (hiResOnly = !hiResOnly)}>
+        Hi-res only
+      </button>
+      <label class="decade" class:on={decade !== null}>
+        <span class="sr-only">Decade</span>
+        <select
+          aria-label="Decade"
+          value={decade === null ? '' : String(decade)}
+          onchange={(e) => (decade = e.currentTarget.value === '' ? null : Number(e.currentTarget.value))}
+        >
+          <option value="">Any decade</option>
+          {#each DECADES as d (d)}<option value={String(d)}>{d}s</option>{/each}
+        </select>
+      </label>
+    </div>
+    {#if narrowing && (filter === 'artists' || filter === 'playlists')}
+      <p class="muted">Artists and playlists have no year or audio quality; clear the filters to see them.</p>
+    {/if}
 
-    {#if filter === 'all'}
+    {#if empty}
+      <p class="muted">{checking ? 'Checking albums…' : 'No results.'}</p>
+    {:else if filter === 'all'}
       <div class="top-row">
         {#if top}
           <div class="top">
@@ -190,35 +266,41 @@
               tracks={topTracks}
               numbered={false}
               showAlbum
-              onplay={(i) => results && playTracks(results.tracks, i)}
+              onplay={(i) => view && playTracks(view.tracks, i)}
             />
           </div>
         {/if}
       </div>
-      {#if results.artists.length > 0}
-        <Shelf title="Artists" items={results.artists} onopen={open} />
+      {#if view.artists.length > 0}
+        <Shelf title="Artists" items={view.artists} onopen={open} />
       {/if}
-      {#if results.albums.length > 0}
-        <Shelf title="Albums" items={results.albums} onopen={open} />
+      {#if view.albums.length > 0}
+        <Shelf title="Albums" items={view.albums} onopen={open} />
       {/if}
-      {#if results.tracks.length > 4}
+      {#if view.playlists.length > 0}
+        <Shelf title="Playlists" items={view.playlists} onopen={open} />
+      {/if}
+      {#if view.tracks.length > 4}
         <h2 class="section">More tracks</h2>
         <TrackList
-          tracks={results.tracks.slice(4)}
+          tracks={view.tracks.slice(4)}
           numbered={false}
-          onplay={(i) => results && playTracks(results.tracks, 4 + i)}
+          onplay={(i) => view && playTracks(view.tracks, 4 + i)}
         />
       {/if}
     {:else if filter === 'artists'}
-      {@render grid(results.artists)}
+      {@render grid(view.artists)}
     {:else if filter === 'albums'}
-      {@render grid(results.albums)}
-    {:else if results.tracks.length > 0}
+      {@render grid(view.albums)}
+      {#if checking}<p class="muted">Checking albums…</p>{/if}
+    {:else if filter === 'playlists'}
+      {@render grid(view.playlists)}
+    {:else if view.tracks.length > 0}
       <TrackList
-        tracks={results.tracks}
+        tracks={view.tracks}
         numbered={false}
         showAlbum
-        onplay={(i) => results && playTracks(results.tracks, i)}
+        onplay={(i) => view && playTracks(view.tracks, i)}
       />
     {:else}
       <p class="muted">No tracks.</p>
@@ -400,8 +482,41 @@
     grid-template-columns: minmax(240px, 340px) 1fr;
     gap: var(--space-6);
   }
+  .toggles {
+    margin-top: var(--space-2);
+    align-items: center;
+  }
+  .decade select {
+    padding: var(--space-1) var(--space-3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-full);
+    background: transparent;
+    color: var(--text-muted);
+    font: inherit;
+    font-size: var(--text-sm);
+  }
+  .decade.on select {
+    background: var(--text);
+    border-color: var(--text);
+    color: var(--bg);
+  }
+  .chips {
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  @media (max-width: 640px) {
+    .chips {
+      flex-wrap: nowrap;
+    }
+    .chip,
+    .decade select {
+      flex: none;
+      white-space: nowrap;
+    }
+  }
   .muted {
     color: var(--text-muted);
+    margin: var(--space-3) 0 0;
   }
   .error {
     color: var(--danger);
