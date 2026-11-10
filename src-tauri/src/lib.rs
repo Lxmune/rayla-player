@@ -2,13 +2,14 @@
 //! (OS keychain; app-private file on Android) and offline downloads. Command
 //! names, argument names and JSON shapes are the contract in `src/lib/ipc.ts`.
 
-use rayla_engine::api::engine::{self as api, DiscordActivity, DspConfig, EngineEvent, OutputDevice, TrackRequest};
+use rayla_engine::api::engine::{self as api, CacheStats, DiscordActivity, DspConfig, EngineEvent, OutputDevice, TrackRequest};
 use rayla_engine::downloads::{DownloadProgress, DownloadRecord, DownloadRequest, DownloadStore};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, Manager, State};
 
+mod media_controls;
 mod secrets;
 use secrets::Secrets;
 
@@ -56,6 +57,26 @@ fn engine_set_next(track: Option<TrackRequest>) -> Result<(), String> {
 #[tauri::command]
 fn engine_prefetch(tracks: Vec<TrackRequest>) -> Result<(), String> {
     api::prefetch(tracks).map_err(err)
+}
+
+#[tauri::command]
+fn engine_cache_stats() -> Result<CacheStats, String> {
+    api::cache_stats().map_err(err)
+}
+
+#[tauri::command]
+fn engine_cache_clear() -> Result<(), String> {
+    api::cache_clear().map_err(err)
+}
+
+#[tauri::command]
+fn engine_cache_set_limit(bytes: u64) -> Result<(), String> {
+    api::cache_set_limit(bytes).map_err(err)
+}
+
+#[tauri::command]
+fn engine_cached_tracks(tracks: Vec<TrackRequest>) -> Result<Vec<String>, String> {
+    api::cached_tracks(tracks).map_err(err)
 }
 
 #[tauri::command]
@@ -204,6 +225,7 @@ pub fn run() {
                 downloads_error,
                 cancels: Mutex::new(HashMap::new()),
             });
+            media_controls::setup(app);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -213,6 +235,12 @@ pub fn run() {
             engine_load,
             engine_set_next,
             engine_prefetch,
+            engine_cache_stats,
+            engine_cache_clear,
+            engine_cache_set_limit,
+            engine_cached_tracks,
+            media_controls::media_update_now_playing,
+            media_controls::media_clear_now_playing,
             engine_play,
             engine_pause,
             engine_stop,

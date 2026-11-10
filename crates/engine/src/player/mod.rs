@@ -18,6 +18,7 @@ static ENGINE: OnceLock<Engine> = OnceLock::new();
 static BACKEND: OnceLock<Arc<dyn Backend>> = OnceLock::new();
 type Handler = Arc<dyn Fn(EngineEvent) + Send + Sync>;
 static PREFETCH: OnceLock<Prefetcher> = OnceLock::new();
+static CACHE_DIR: OnceLock<PathBuf> = OnceLock::new();
 static SINK: Mutex<Option<Handler>> = Mutex::new(None);
 
 fn backend() -> Arc<dyn Backend> {
@@ -47,9 +48,31 @@ pub fn init(cache_dir: String) -> Result<()> {
                 signal_path: None,
                 message: None,
                 throughput_bps: bps,
+                cached_bytes: 0,
+                total_bytes: 0,
             });
         }
     }));
+    // Cache fill level of tracks being fetched becomes events.
+    source::set_progress_hook(Arc::new(|track_id, cached, total| {
+        let handler = SINK.lock().unwrap().clone();
+        if let Some(h) = handler {
+            h(EngineEvent {
+                kind: EventKind::FetchProgress,
+                state: PlaybackState::Stopped,
+                track_id: Some(track_id.to_string()),
+                entry_id: None,
+                position_ms: 0,
+                duration_ms: 0,
+                signal_path: None,
+                message: None,
+                throughput_bps: 0,
+                cached_bytes: cached,
+                total_bytes: total,
+            });
+        }
+    }));
+    let _ = CACHE_DIR.set(dir.clone());
     source::prune_cache(&dir);
     PREFETCH.get_or_init(|| Prefetcher::new(dir.clone()));
     ENGINE.get_or_init(|| {
@@ -90,6 +113,30 @@ pub fn prefetch(tracks: Vec<TrackRequest>) -> Result<()> {
         .ok_or_else(|| anyhow!("engine not initialised; call init_engine first"))?
         .set(tracks);
     Ok(())
+}
+
+fn cache_dir() -> Result<&'static PathBuf> {
+    CACHE_DIR
+        .get()
+        .ok_or_else(|| anyhow!("engine not initialised; call init_engine first"))
+}
+
+pub fn cache_stats() -> Result<CacheStats> {
+    Ok(source::cache_stats(cache_dir()?))
+}
+
+pub fn cache_clear() -> Result<()> {
+    source::cache_clear(cache_dir()?);
+    Ok(())
+}
+
+pub fn cache_set_limit(bytes: u64) -> Result<()> {
+    source::cache_set_limit(cache_dir()?, bytes);
+    Ok(())
+}
+
+pub fn cached_tracks(tracks: Vec<TrackRequest>) -> Result<Vec<String>> {
+    Ok(source::cached_tracks(cache_dir()?, &tracks))
 }
 
 pub fn play() -> Result<()> {

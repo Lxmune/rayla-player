@@ -31,10 +31,53 @@ pub(crate) fn emit_throughput(track_id: &str, bps: u64) {
     }
 }
 
-/// Trim the stream cache to its size cap (least recently used first).
-pub(crate) fn prune_cache(dir: &Path) {
-    cache::prune(dir, cache::CACHE_CAP);
+/// Receives `(track id, cached bytes, total bytes)`; total 0 = unknown length.
+type ProgressHook = Arc<dyn Fn(&str, u64, u64) + Send + Sync>;
+static PROGRESS_HOOK: Mutex<Option<ProgressHook>> = Mutex::new(None);
+
+/// Install the callback the player uses to turn cache fill level into events.
+pub(crate) fn set_progress_hook(hook: ProgressHook) {
+    *PROGRESS_HOOK.lock().unwrap() = Some(hook);
 }
+
+pub(crate) fn emit_progress(track_id: &str, cached: u64, total: u64) {
+    let hook = PROGRESS_HOOK.lock().unwrap().clone();
+    if let Some(h) = hook {
+        h(track_id, cached, total);
+    }
+}
+
+/// Trim the stream cache to its size limit (least recently used first).
+pub(crate) fn prune_cache(dir: &Path) {
+    cache::prune(dir, cache::limit());
+}
+
+pub(crate) fn cache_stats(dir: &Path) -> crate::api::engine::CacheStats {
+    cache::stats(dir)
+}
+
+/// Delete every cache entry not currently in use.
+pub(crate) fn cache_clear(dir: &Path) {
+    cache::prune(dir, 0);
+}
+
+pub(crate) fn cache_set_limit(dir: &Path, bytes: u64) {
+    cache::set_limit(bytes);
+    cache::prune(dir, bytes);
+}
+
+/// Ids of `tracks` whose stream-cache entry is complete on disk.
+pub(crate) fn cached_tracks(dir: &Path, tracks: &[crate::api::engine::TrackRequest]) -> Vec<String> {
+    tracks
+        .iter()
+        .filter(|t| t.local_path.is_none())
+        .filter(|t| cache::is_complete(dir, &cache::cache_key(&t.id, &t.url)))
+        .map(|t| t.id.clone())
+        .collect()
+}
+
+#[cfg(test)]
+mod cache_tests;
 
 #[cfg(test)]
 pub(crate) use cache::cache_key;

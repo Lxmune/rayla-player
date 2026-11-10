@@ -14,11 +14,23 @@ use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex, Weak};
 use std::time::{Duration, Instant, SystemTime};
 
-/// Stream cache size cap; least recently used entries are pruned beyond it.
-pub(crate) const CACHE_CAP: u64 = 3 << 30;
+/// Default stream cache size limit; least recently used entries are pruned beyond it.
+const DEFAULT_LIMIT: u64 = 3 << 30;
+static LIMIT: AtomicU64 = AtomicU64::new(DEFAULT_LIMIT);
+/// Minimum spacing of `FetchProgress` events per downloader.
+const PROGRESS_EVERY: Duration = Duration::from_millis(500);
+
+pub(crate) fn limit() -> u64 {
+    LIMIT.load(Ordering::Relaxed)
+}
+
+pub(crate) fn set_limit(bytes: u64) {
+    LIMIT.store(bytes, Ordering::Relaxed);
+}
 /// Persist the range table after this many new bytes (and when finishing).
 const META_EVERY: u64 = 4 << 20;
 /// A wanted position this close ahead of a running request is simply read through.
@@ -74,6 +86,10 @@ impl Ranges {
     }
     pub fn covers(&self, len: u64) -> bool {
         len == 0 || self.0.first().is_some_and(|&(a, b)| a == 0 && b >= len)
+    }
+    /// Number of bytes covered.
+    pub fn total(&self) -> u64 {
+        self.0.iter().map(|&(a, b)| b - a).sum()
     }
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
@@ -391,6 +407,8 @@ struct Dl {
     total_bytes: u64,
     /// Time spent inside requests (excludes backoff sleeps).
     active: Duration,
+    /// When the last `FetchProgress` event went out.
+    last_progress: Option<Instant>,
 }
 
 fn bps(bytes: u64, d: Duration) -> u64 {
@@ -423,6 +441,7 @@ fn run(e: Arc<Entry>) {
         win_bytes: 0,
         total_bytes: 0,
         active: Duration::ZERO,
+        last_progress: None,
     };
     loop {
         let (start, limit) = {
@@ -474,7 +493,7 @@ fn finished(e: &Entry, dl: &Dl) {
     if dl.total_bytes >= THROUGHPUT_MIN_BYTES && !dl.active.is_zero() {
         super::emit_throughput(&e.track_id, bps(dl.total_bytes, dl.active));
     }
-    prune(&e.cache_dir, CACHE_CAP);
+    prune(&e.cache_dir, limit());
 }
 
 /// One request: stream bytes into the cache until its range ends, a reader
@@ -586,8 +605,12 @@ fn finish_unknown(e: &Entry, len: u64) -> Result<(), Fail> {
     st.progress += 1;
     let _ = e.writer.lock().unwrap().set_len(len);
     e.save_meta(&mut st);
+    let complete = st.complete;
     drop(st);
     e.cv.notify_all();
+    if complete {
+        super::emit_progress(&e.track_id, len, len);
+    }
     Ok(())
 }
 
@@ -624,6 +647,7 @@ fn store(
     } else if st.unsaved >= META_EVERY {
         e.save_meta(&mut st);
     }
+    let (cached, total, complete) = (st.ranges.total(), st.len.unwrap_or(0), st.complete);
     let mut go = st.holders > 0 && !st.complete;
     // A reader needs a place this request will not reach soon: restart there.
     if go && !whole {
@@ -637,6 +661,10 @@ fn store(
     e.cv.notify_all();
     dl.total_bytes += n;
     dl.win_bytes += n;
+    if complete || dl.last_progress.map_or(true, |t| t.elapsed() >= PROGRESS_EVERY) {
+        dl.last_progress = Some(Instant::now());
+        super::emit_progress(&e.track_id, cached, total);
+    }
     if dl.win_start.elapsed() >= THROUGHPUT_WINDOW {
         super::emit_throughput(&e.track_id, bps(dl.win_bytes, dl.win_start.elapsed()));
         dl.win_start = Instant::now();
@@ -702,4 +730,30 @@ pub(crate) fn prune(dir: &Path, cap: u64) {
         let _ = std::fs::remove_file(p.with_extension("meta"));
         total = total.saturating_sub(sz);
     }
+}
+
+/// Whether the cache holds the whole file for `key` (judged from disk only).
+pub(crate) fn is_complete(dir: &Path, key: &str) -> bool {
+    let base = safe_key(key);
+    let data = dir.join(format!("{base}.audio"));
+    let Some((len, ranges)) = read_meta(&dir.join(format!("{base}.meta"))) else {
+        return false;
+    };
+    std::fs::metadata(&data).is_ok_and(|m| m.len() == len) && ranges.covers(len)
+}
+
+/// Bytes used (data + range tables), the limit and the number of entries.
+pub(crate) fn stats(dir: &Path) -> crate::api::engine::CacheStats {
+    let (mut used, mut entries) = (0u64, 0u64);
+    if let Ok(rd) = std::fs::read_dir(dir) {
+        for ent in rd.flatten() {
+            let p = ent.path();
+            if p.extension().and_then(|x| x.to_str()) == Some("audio") {
+                entries += 1;
+                used += ent.metadata().map_or(0, |m| m.len());
+                used += std::fs::metadata(p.with_extension("meta")).map_or(0, |m| m.len());
+            }
+        }
+    }
+    crate::api::engine::CacheStats { used_bytes: used, limit_bytes: limit(), entries }
 }

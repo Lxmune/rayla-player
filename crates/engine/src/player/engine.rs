@@ -277,6 +277,8 @@ impl Core {
             signal_path: None,
             message: None,
             throughput_bps: 0,
+            cached_bytes: 0,
+            total_bytes: 0,
         }
     }
 
@@ -1007,6 +1009,8 @@ impl Core {
                     signal_path: None,
                     message: None,
                     throughput_bps: 0,
+                    cached_bytes: 0,
+                    total_bytes: 0,
                 });
             }
             Some(msg) => self.emit_error(Some(&ended.req), msg),

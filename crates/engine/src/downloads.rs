@@ -1,19 +1,25 @@
 //! Offline downloads: a directory of finished files plus an `index.json`.
 //! Uses the same ureq agent (and therefore TLS stack) as the streaming source.
 //! Files are written to `<id>.<ext>.part` and renamed only when complete, so
-//! the index only ever points at whole files.
+//! the index only ever points at whole files. A `.part` survives network
+//! failure / app exit (with `.part.meta` holding the total length) and is
+//! resumed with a Range request by the next download of the same id.
 
 use crate::api::engine::HttpHeader;
 use anyhow::{anyhow, bail, Context, Result};
 use serde::{Deserialize, Serialize};
-use std::fs::{self, File};
-use std::io::{Read, Write};
+use std::fs::{self, File, OpenOptions};
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const PROGRESS_INTERVAL: Duration = Duration::from_millis(200);
+const BACKOFF_MIN: Duration = Duration::from_millis(500);
+const BACKOFF_MAX: Duration = Duration::from_secs(10);
+/// Give up (keeping the partial file) after this long without any new bytes.
+const GIVE_UP_AFTER: Duration = Duration::from_secs(120);
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -141,8 +147,11 @@ impl DownloadStore {
         Ok(())
     }
 
-    /// Blocking download. `progress` is throttled (about 5/s, plus a final
-    /// call). Setting `cancel` aborts, removes the `.part` file and errors.
+    /// Blocking, resumable download. `progress` is throttled (about 5/s, plus a
+    /// final call). Network errors are retried with backoff inside the call;
+    /// if it still fails (or the app exits) the `.part` file stays and the
+    /// next call for the same id resumes it with a Range request. Setting
+    /// `cancel` aborts, removes the partial file and errors.
     pub fn download(
         &self,
         req: &DownloadRequest,
@@ -154,15 +163,20 @@ impl DownloadStore {
         let file_name = format!("{id}.{ext}");
         let final_path = self.dir.join(&file_name);
         let part_path = self.dir.join(format!("{file_name}.part"));
+        let meta_path = self.dir.join(format!("{file_name}.part.meta"));
 
-        let result = self.fetch(req, &id, &part_path, &mut progress, cancel);
+        let result = self.fetch(req, &id, &part_path, &meta_path, &mut progress, cancel);
         let bytes = match result {
             Ok(n) => n,
-            Err(e) => {
-                let _ = fs::remove_file(&part_path);
-                return Err(e);
+            Err(f) => {
+                if f.discard {
+                    let _ = fs::remove_file(&part_path);
+                    let _ = fs::remove_file(&meta_path);
+                }
+                return Err(f.err);
             }
         };
+        let _ = fs::remove_file(&meta_path);
         let finish = || -> Result<DownloadRecord> {
             fs::rename(&part_path, &final_path)?;
             let _g = self.lock.lock().unwrap();
@@ -195,56 +209,214 @@ impl DownloadStore {
         req: &DownloadRequest,
         id: &str,
         part_path: &Path,
+        meta_path: &Path,
         progress: &mut impl FnMut(DownloadProgress),
         cancel: &AtomicBool,
-    ) -> Result<u64> {
+    ) -> Result<u64, Failure> {
+        let cancelled = || Failure { discard: true, err: anyhow!("download cancelled") };
         if cancel.load(Ordering::Relaxed) {
-            bail!("download cancelled");
+            return Err(cancelled());
         }
-        let agent = crate::source::agent()?;
+        let io = |e: std::io::Error| Failure { discard: false, err: e.into() };
+        let agent = crate::source::agent().map_err(|err| Failure { discard: true, err })?;
+
+        // Resume only when the sidecar knows the total and the partial file is shorter.
+        let part_len = fs::metadata(part_path).map(|m| m.len()).unwrap_or(0);
+        let mut total: Option<u64> = fs::read_to_string(meta_path)
+            .ok()
+            .and_then(|t| t.trim().parse::<u64>().ok());
+        let mut offset = match total {
+            Some(t) if part_len > 0 && part_len < t => part_len,
+            _ => 0,
+        };
+        if offset == 0 {
+            total = None;
+        }
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(part_path)
+            .map_err(io)?;
+        file.set_len(offset).map_err(io)?;
+        file.seek(SeekFrom::Start(offset)).map_err(io)?;
+
+        let mut buf = vec![0u8; 64 * 1024];
+        let mut last: Option<Instant> = None;
+        let mut backoff = BACKOFF_MIN;
+        let mut last_progress = Instant::now();
+        if offset > 0 {
+            progress(DownloadProgress { id: id.to_string(), received_bytes: offset, total_bytes: total });
+        }
+        loop {
+            if cancel.load(Ordering::Relaxed) {
+                return Err(cancelled());
+            }
+            let before = offset;
+            match self.attempt(
+                req, &agent, &mut file, meta_path, &mut offset, &mut total, &mut buf,
+                &mut last, id, progress, cancel,
+            ) {
+                Ok(()) => break,
+                Err(Attempt::Cancelled) => return Err(cancelled()),
+                Err(Attempt::Fatal(e)) => return Err(Failure { discard: true, err: e }),
+                Err(Attempt::Restart) => {
+                    // Server ignored/rejected the Range or the file changed: begin again.
+                    file.set_len(0).map_err(io)?;
+                    file.seek(SeekFrom::Start(0)).map_err(io)?;
+                    offset = 0;
+                    total = None;
+                    let _ = fs::remove_file(meta_path);
+                }
+                Err(Attempt::Retry(e)) => {
+                    let progressed = offset > before;
+                    // Unknown length (chunked): nothing safe to resume from.
+                    if total.is_none() && offset > 0 {
+                        file.set_len(0).map_err(io)?;
+                        file.seek(SeekFrom::Start(0)).map_err(io)?;
+                        offset = 0;
+                    }
+                    if progressed {
+                        backoff = BACKOFF_MIN;
+                        last_progress = Instant::now();
+                        continue;
+                    }
+                    if last_progress.elapsed() >= GIVE_UP_AFTER {
+                        return Err(Failure {
+                            discard: false,
+                            err: e.context("no progress for 2 minutes; will resume on retry"),
+                        });
+                    }
+                    let until = Instant::now() + backoff;
+                    while Instant::now() < until {
+                        if cancel.load(Ordering::Relaxed) {
+                            return Err(cancelled());
+                        }
+                        std::thread::sleep(Duration::from_millis(50));
+                    }
+                    backoff = (backoff * 2).min(BACKOFF_MAX);
+                }
+            }
+        }
+        file.sync_all().map_err(io)?;
+        progress(DownloadProgress { id: id.to_string(), received_bytes: offset, total_bytes: total });
+        Ok(offset)
+    }
+
+    /// One HTTP request, appending to `file` from `offset`. `Ok` = whole file received.
+    #[allow(clippy::too_many_arguments)]
+    fn attempt(
+        &self,
+        req: &DownloadRequest,
+        agent: &ureq::Agent,
+        file: &mut File,
+        meta_path: &Path,
+        offset: &mut u64,
+        total: &mut Option<u64>,
+        buf: &mut [u8],
+        last: &mut Option<Instant>,
+        id: &str,
+        progress: &mut impl FnMut(DownloadProgress),
+        cancel: &AtomicBool,
+    ) -> Result<(), Attempt> {
         let mut r = agent.get(&req.url);
         for h in &req.headers {
             r = r.set(&h.name, &h.value);
         }
-        let resp = r.call().map_err(|e| anyhow!("download failed: {e}"))?;
-        let total = resp
+        if *offset > 0 {
+            r = r.set("Range", &format!("bytes={}-", *offset));
+        }
+        let resp = match r.call() {
+            Ok(resp) => resp,
+            Err(ureq::Error::Status(416, _)) if *offset > 0 => return Err(Attempt::Restart),
+            Err(ureq::Error::Status(c, _)) if (400..500).contains(&c) && c != 408 && c != 429 => {
+                return Err(Attempt::Fatal(anyhow!("download failed: HTTP {c}")));
+            }
+            Err(e) => return Err(Attempt::Retry(anyhow!("download failed: {e}"))),
+        };
+        let content_len = resp
             .header("content-length")
             .and_then(|v| v.trim().parse::<u64>().ok());
+        match resp.status() {
+            206 => {
+                // "bytes a-b/total": must continue exactly where we stopped, same total.
+                let cr = resp.header("content-range").unwrap_or("").to_string();
+                let start = cr
+                    .strip_prefix("bytes ")
+                    .and_then(|r| r.split('-').next())
+                    .and_then(|a| a.trim().parse::<u64>().ok());
+                let t = cr.rsplit('/').next().and_then(|t| t.trim().parse::<u64>().ok());
+                match (start, t) {
+                    (Some(s), Some(t)) if s == *offset && total.map_or(true, |k| k == t) => {
+                        *total = Some(t)
+                    }
+                    _ if *offset > 0 => return Err(Attempt::Restart),
+                    _ => return Err(Attempt::Retry(anyhow!("unusable Content-Range {cr:?}"))),
+                }
+            }
+            200 => {
+                if *offset > 0 {
+                    return Err(Attempt::Restart); // Range ignored: re-request from scratch
+                }
+                *total = content_len;
+            }
+            s => return Err(Attempt::Retry(anyhow!("unexpected HTTP status {s}"))),
+        }
+        match *total {
+            Some(t) => {
+                let _ = fs::write(meta_path, t.to_string());
+            }
+            None => {
+                let _ = fs::remove_file(meta_path);
+            }
+        }
         let mut reader = resp.into_reader();
-        let mut file = File::create(part_path)
-            .with_context(|| format!("create {}", part_path.display()))?;
-        let mut buf = vec![0u8; 64 * 1024];
-        let mut received = 0u64;
-        let mut last: Option<Instant> = None;
-        let report = |received: u64| DownloadProgress {
-            id: id.to_string(),
-            received_bytes: received,
-            total_bytes: total,
-        };
         loop {
             if cancel.load(Ordering::Relaxed) {
-                bail!("download cancelled");
+                return Err(Attempt::Cancelled);
             }
-            let n = reader.read(&mut buf).context("download read failed")?;
+            let n = reader
+                .read(buf)
+                .map_err(|e| Attempt::Retry(anyhow!("download read failed: {e}")))?;
             if n == 0 {
                 break;
             }
-            file.write_all(&buf[..n])?;
-            received += n as u64;
+            file.write_all(&buf[..n])
+                .map_err(|e| Attempt::Fatal(anyhow!("write failed: {e}")))?;
+            *offset += n as u64;
             if last.map_or(true, |t| t.elapsed() >= PROGRESS_INTERVAL) {
-                last = Some(Instant::now());
-                progress(report(received));
+                *last = Some(Instant::now());
+                progress(DownloadProgress {
+                    id: id.to_string(),
+                    received_bytes: *offset,
+                    total_bytes: *total,
+                });
+            }
+            if total.is_some_and(|t| *offset >= t) {
+                break;
             }
         }
-        if let Some(t) = total {
-            if received != t {
-                bail!("download truncated: got {received} of {t} bytes");
+        if let Some(t) = *total {
+            if *offset != t {
+                return Err(Attempt::Retry(anyhow!("download truncated: got {} of {t} bytes", *offset)));
             }
         }
-        file.sync_all()?;
-        progress(report(received));
-        Ok(received)
+        Ok(())
     }
+}
+
+/// Why a download call ended; `discard` = also delete the partial file.
+struct Failure {
+    discard: bool,
+    err: anyhow::Error,
+}
+
+enum Attempt {
+    Cancelled,
+    Fatal(anyhow::Error),
+    Retry(anyhow::Error),
+    /// Throw the partial file away and start from byte 0.
+    Restart,
 }
 
 fn iso8601_now() -> String {
@@ -433,5 +605,102 @@ mod tests {
         let list = store.list();
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].id, "two");
+    }
+
+    use crate::player::tests::Behavior;
+
+    fn seed_part(dir: &Path, name: &str, data: &[u8], total: Option<u64>) {
+        fs::write(dir.join(format!("{name}.part")), data).unwrap();
+        if let Some(t) = total {
+            fs::write(dir.join(format!("{name}.part.meta")), t.to_string()).unwrap();
+        }
+    }
+
+    #[test]
+    fn dropped_connection_resumes_within_one_download() {
+        let data = body(600_000);
+        let srv = TestServer::start_with(data.clone(), Behavior::DropFirstAfter(150_000));
+        let dir = tmp("dl-drop");
+        let store = DownloadStore::new(&dir).unwrap();
+        let mut calls = Vec::new();
+        let rec = store
+            .download(&request(&srv, "d", "flac"), |p| calls.push(p), &AtomicBool::new(false))
+            .unwrap();
+        assert_eq!(fs::read(&rec.path).unwrap(), data);
+        let reqs = srv.requests();
+        assert_eq!(reqs.len(), 2, "{reqs:?}");
+        assert_eq!(reqs[0], "");
+        assert!(reqs[1].starts_with("bytes=") && reqs[1].ends_with('-') && reqs[1] != "bytes=0-", "{reqs:?}");
+        let last = calls.last().unwrap();
+        assert_eq!((last.received_bytes, last.total_bytes), (600_000, Some(600_000)));
+        assert!(calls.iter().all(|p| p.total_bytes == Some(600_000)));
+        assert_eq!(files(&dir), vec!["d.flac", "index.json"]);
+    }
+
+    #[test]
+    fn existing_part_is_resumed_by_a_new_start() {
+        let data = body(400_000);
+        let srv = TestServer::start(data.clone());
+        let dir = tmp("dl-resume");
+        let store = DownloadStore::new(&dir).unwrap();
+        seed_part(&dir, "r.flac", &data[..123_456], Some(400_000));
+        assert!(store.list().is_empty(), "partial files are not downloads");
+        let mut calls = Vec::new();
+        let rec = store
+            .download(&request(&srv, "r", "flac"), |p| calls.push(p), &AtomicBool::new(false))
+            .unwrap();
+        assert_eq!(srv.requests(), vec!["bytes=123456-".to_string()]);
+        assert_eq!(fs::read(&rec.path).unwrap(), data);
+        assert_eq!(calls[0].received_bytes, 123_456);
+        assert_eq!(calls.last().unwrap().received_bytes, 400_000);
+        assert_eq!(files(&dir), vec!["index.json", "r.flac"]);
+    }
+
+    #[test]
+    fn changed_length_or_missing_sidecar_restarts_from_zero() {
+        let data = body(300_000);
+        let srv = TestServer::start(data.clone());
+        for (name, total) in [("a", Some(999_999)), ("b", None)] {
+            let dir = tmp(&format!("dl-restart-{name}"));
+            let store = DownloadStore::new(&dir).unwrap();
+            seed_part(&dir, "x.bin", &vec![7u8; 50_000], total);
+            let before = srv.requests().len();
+            let rec = store
+                .download(&request(&srv, "x", "bin"), |_| {}, &AtomicBool::new(false))
+                .unwrap();
+            assert_eq!(fs::read(&rec.path).unwrap(), data, "{name}");
+            if total.is_none() {
+                assert_eq!(srv.requests()[before..], [String::new()]);
+            }
+        }
+    }
+
+    #[test]
+    fn server_ignoring_range_restarts_from_zero() {
+        let data = body(200_000);
+        let srv = TestServer::start_with(data.clone(), Behavior::Chunked);
+        let dir = tmp("dl-ignore-range");
+        let store = DownloadStore::new(&dir).unwrap();
+        seed_part(&dir, "c.bin", &data[..1000], Some(200_000));
+        let rec = store
+            .download(&request(&srv, "c", "bin"), |_| {}, &AtomicBool::new(false))
+            .unwrap();
+        assert_eq!(fs::read(&rec.path).unwrap(), data);
+        assert_eq!(files(&dir), vec!["c.bin", "index.json"]);
+    }
+
+    #[test]
+    fn cancel_deletes_resumable_partial() {
+        let data = body(3_000_000);
+        let srv = TestServer::start(data.clone());
+        let dir = tmp("dl-cancel-part");
+        let store = DownloadStore::new(&dir).unwrap();
+        seed_part(&dir, "k.flac", &data[..500_000], Some(3_000_000));
+        let cancel = AtomicBool::new(false);
+        let err = store
+            .download(&request(&srv, "k", "flac"), |_| cancel.store(true, Ordering::Relaxed), &cancel)
+            .unwrap_err();
+        assert!(err.to_string().contains("cancel"), "{err}");
+        assert!(files(&dir).is_empty(), "{:?}", files(&dir));
     }
 }

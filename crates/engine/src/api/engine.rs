@@ -185,6 +185,9 @@ pub enum EventKind {
     Error,
     /// Network rate (`throughput_bps`) measured while fetching `track_id` into the cache.
     Throughput,
+    /// `cached_bytes` of `total_bytes` of `track_id`'s stream-cache entry are on disk
+    /// (about 2 Hz while its downloader progresses, and once when complete).
+    FetchProgress,
 }
 
 /// Flat event record; which fields are meaningful depends on `kind`.
@@ -205,6 +208,21 @@ pub struct EngineEvent {
     /// Network rate in bits/s; set on `Throughput` events, else 0.
     #[serde(default)]
     pub throughput_bps: u64,
+    /// Set on `FetchProgress` events, else 0.
+    #[serde(default)]
+    pub cached_bytes: u64,
+    /// Length of the file for `FetchProgress` events; 0 = unknown, else 0.
+    #[serde(default)]
+    pub total_bytes: u64,
+}
+
+/// Size of the stream cache.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CacheStats {
+    pub used_bytes: u64,
+    pub limit_bytes: u64,
+    pub entries: u64,
 }
 
 /// Start the engine. `cache_dir` holds stream cache and downloads.
@@ -245,6 +263,27 @@ pub fn set_next(track: Option<TrackRequest>) -> anyhow::Result<()> {
 /// the same entry). Complete entries and tracks with `local_path` are skipped.
 pub fn prefetch(tracks: Vec<TrackRequest>) -> anyhow::Result<()> {
     player::prefetch(tracks)
+}
+
+/// Size, limit and entry count of the stream cache.
+pub fn cache_stats() -> anyhow::Result<CacheStats> {
+    player::cache_stats()
+}
+
+/// Delete every stream-cache entry that is not currently in use.
+pub fn cache_clear() -> anyhow::Result<()> {
+    player::cache_clear()
+}
+
+/// Set the stream-cache size limit (bytes) and prune to it immediately.
+pub fn cache_set_limit(bytes: u64) -> anyhow::Result<()> {
+    player::cache_set_limit(bytes)
+}
+
+/// Ids of the tracks whose stream-cache entry is completely on disk.
+/// Tracks with a `local_path` are skipped.
+pub fn cached_tracks(tracks: Vec<TrackRequest>) -> anyhow::Result<Vec<String>> {
+    player::cached_tracks(tracks)
 }
 
 pub fn play() -> anyhow::Result<()> {
@@ -334,6 +373,8 @@ mod contract_tests {
             }),
             message: None,
             throughput_bps: 0,
+            cached_bytes: 0,
+            total_bytes: 0,
         };
         let v = serde_json::to_value(&e).unwrap();
         assert_eq!(
@@ -347,7 +388,7 @@ mod contract_tests {
                     "outputSampleRate": 48000, "outputBitDepth": 24,
                     "exclusive": true, "bitPerfect": false
                 },
-                "message": null, "throughputBps": 0
+                "message": null, "throughputBps": 0, "cachedBytes": 0, "totalBytes": 0
             })
         );
     }
