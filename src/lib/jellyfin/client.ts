@@ -84,6 +84,8 @@ function filters(opts: AlbumsQuery): string | null {
 export type PlaybackExtra = Record<string, unknown>;
 
 const ITEM_FIELDS = 'MediaSources,DateCreated,ChildCount';
+/** Adds what the recommender reads (genres, tags; play counts come with UserData). */
+const TASTE_FIELDS = `${ITEM_FIELDS},Genres,Tags`;
 
 export const REMOTE_COMMANDS = [
   'VolumeUp',
@@ -262,6 +264,47 @@ export class JellyfinClient {
       Fields: ITEM_FIELDS,
       StartIndex: opts.startIndex ?? 0,
       Limit: opts.limit ?? 100,
+    });
+  }
+
+  /** The user's played tracks with genres and tags, most played or most recent first. */
+  listeningHistory(opts: { sortBy: 'PlayCount' | 'DatePlayed'; limit: number }): Promise<ItemsPage> {
+    return this.items('/Items', {
+      IncludeItemTypes: 'Audio',
+      Recursive: true,
+      Filters: 'IsPlayed',
+      SortBy: `${opts.sortBy},SortName`,
+      SortOrder: 'Descending',
+      Fields: TASTE_FIELDS,
+      Limit: opts.limit,
+    });
+  }
+
+  /** Random albums or tracks in any of `genreIds`, with genres and tags (recommendation candidates). */
+  discover(
+    type: 'MusicAlbum' | 'Audio',
+    opts: { genreIds: string[]; unplayedOnly?: boolean; limit: number },
+  ): Promise<ItemsPage> {
+    return this.items('/Items', {
+      IncludeItemTypes: type,
+      Recursive: true,
+      GenreIds: opts.genreIds.join('|'),
+      Filters: opts.unplayedOnly ? 'IsUnplayed' : null,
+      SortBy: 'Random',
+      Fields: TASTE_FIELDS,
+      Limit: opts.limit,
+    });
+  }
+
+  /** Albums by any of the given album artists, with genres and tags. */
+  albumsByArtists(artistIds: string[], limit = 60): Promise<ItemsPage> {
+    return this.items('/Items', {
+      IncludeItemTypes: 'MusicAlbum',
+      Recursive: true,
+      AlbumArtistIds: artistIds.join('|'),
+      SortBy: 'Random',
+      Fields: TASTE_FIELDS,
+      Limit: limit,
     });
   }
 

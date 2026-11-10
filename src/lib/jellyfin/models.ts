@@ -86,6 +86,14 @@ export interface BaseItem {
   /** Entry id inside a playlist (only on playlist items); needed to remove it. */
   playlistItemId: string | null;
   mediaSources: MediaSource[];
+  /** Genres (needs `Fields=Genres`); id is '' when the server sent only names. */
+  genres: NameId[];
+  /** Free-form tags (needs `Fields=Tags`). */
+  tags: string[];
+  /** How often this user played the item. */
+  playCount: number;
+  /** ISO-8601 time of the user's last play, when known. */
+  lastPlayed: string | null;
 }
 
 export interface ItemsPage {
@@ -149,6 +157,17 @@ export function parseMediaSource(j: Json): MediaSource {
 }
 
 /** Parses an item from unknown JSON; non-objects yield an empty item. */
+const strings = (v: unknown): string[] =>
+  Array.isArray(v) ? v.filter((s): s is string => typeof s === 'string' && s !== '') : [];
+
+const validDate = (s: string | null): string | null => (s !== null && !Number.isNaN(Date.parse(s)) ? s : null);
+
+/** GenreItems (with ids) when present, else the plain Genres names. */
+function parseGenres(j: Json): NameId[] {
+  const items = list(j.GenreItems, parseNameId).filter((g) => g.name !== '');
+  return items.length > 0 ? items : strings(j.Genres).map((name) => ({ id: '', name }));
+}
+
 export function parseBaseItem(json: unknown): BaseItem {
   const j: Json = isObject(json) ? json : {};
   const userData = isObject(j.UserData) ? j.UserData : null;
@@ -178,6 +197,10 @@ export function parseBaseItem(json: unknown): BaseItem {
     dateCreated: created !== null && !Number.isNaN(Date.parse(created)) ? created : null,
     playlistItemId: str(j.PlaylistItemId),
     mediaSources: list(j.MediaSources, parseMediaSource),
+    genres: parseGenres(j),
+    tags: strings(j.Tags),
+    playCount: Math.max(0, int(userData?.PlayCount) ?? 0),
+    lastPlayed: validDate(str(userData?.LastPlayedDate)),
   };
 }
 
@@ -229,7 +252,7 @@ export function baseItemToJson(i: BaseItem): Json {
       ChildCount: i.childCount,
       NormalizationGain: i.normalizationGain,
     }),
-    UserData: { IsFavorite: i.isFavorite },
+    UserData: compact({ IsFavorite: i.isFavorite, PlayCount: i.playCount, LastPlayedDate: i.lastPlayed }),
     ImageTags: compact({ Primary: i.primaryImageTag }),
     ...compact({
       AlbumPrimaryImageTag: i.albumPrimaryImageTag,
@@ -237,6 +260,8 @@ export function baseItemToJson(i: BaseItem): Json {
       PlaylistItemId: i.playlistItemId,
     }),
     MediaSources: i.mediaSources.map(mediaSourceToJson),
+    GenreItems: i.genres.map((g) => ({ Id: g.id, Name: g.name })),
+    Tags: [...i.tags],
   };
 }
 

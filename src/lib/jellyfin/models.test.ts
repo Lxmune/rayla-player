@@ -66,8 +66,10 @@ describe('parseBaseItem', () => {
       AlbumId: 'al',
       NormalizationGain: -4.5,
       DateCreated: '2026-01-02T03:04:05Z',
-      UserData: { IsFavorite: true },
+      UserData: { IsFavorite: true, PlayCount: 7, LastPlayedDate: '2026-11-01T10:00:00Z' },
       ImageTags: { Primary: 'tag' },
+      GenreItems: [{ Id: 'g1', Name: 'Metal' }],
+      Tags: ['vocaloid'],
       MediaSources: [
         {
           Id: 's',
