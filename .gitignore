@@ -13,5 +13,19 @@ Thumbs.db
 .vscode/
 .idea/
 
-# Sandbox placeholder
+# Sandbox placeholders: empty read-only files the dev sandbox creates at the repo
+# root to shield the user's own config files; recreated each session.
 /.mcp.json
+/.bash_profile
+/.bashrc
+/.gitconfig
+/.gitmodules
+/.idea
+/.profile
+/.ripgreprc
+/.vscode
+/.zprofile
+/.zshrc
+
+# Local copies of Windows builds
+dist-windows
