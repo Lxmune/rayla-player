@@ -10,11 +10,17 @@
     item,
     positionMs,
     onseek,
+    large = false,
+    onloaded,
   }: {
     item: BaseItem;
     positionMs: number;
     /** Called with a line's start when a synced line is clicked. */
     onseek?: (ms: number) => void;
+    /** Cover-sized variant: centred, bigger type. */
+    large?: boolean;
+    /** Fires once lyrics for the current item finished loading (true when there are any). */
+    onloaded?: (has: boolean) => void;
   } = $props();
 
   const FOLLOW_PAUSE_MS = 4000;
@@ -34,15 +40,24 @@
   });
 
   const lyrics = $derived(res.data);
+
+  $effect(() => {
+    if (res.loading) return;
+    const has = lyrics !== null && lyrics !== undefined && lyrics.lines.length > 0;
+    untrack(() => onloaded?.(has));
+  });
   const synced = $derived(lyrics !== null && lyrics !== undefined && lyrics.isSynced);
   const active = $derived(synced && lyrics ? activeLyricIndex(lyrics.lines, positionMs) : -1);
+
+  const reduced = () =>
+    typeof document !== 'undefined' && document.documentElement.dataset.motion === 'reduced';
 
   function centre(i: number, smooth = true) {
     const el = list?.querySelector<HTMLElement>(`[data-line="${i}"]`);
     if (!list || !el) return;
     const top = el.offsetTop - list.clientHeight / 2 + el.clientHeight / 2;
     try {
-      list.scrollTo?.({ top: Math.max(0, top), behavior: smooth ? 'smooth' : 'auto' });
+      list.scrollTo?.({ top: Math.max(0, top), behavior: smooth && !reduced() ? 'smooth' : 'auto' });
     } catch {
       // scrolling unsupported (tests)
     }
@@ -74,7 +89,7 @@
   });
 </script>
 
-<div class="wrap">
+<div class="wrap" class:large>
   <div
     class="lyrics"
     bind:this={list}
@@ -235,6 +250,21 @@
     font-weight: 600;
     cursor: pointer;
     animation: rise-in var(--duration) var(--ease-out);
+  }
+  .large .lyrics {
+    padding: var(--space-4);
+  }
+  .large ol {
+    padding: 45% 0;
+  }
+  .large .line {
+    text-align: center;
+    transform-origin: center;
+    font-size: clamp(var(--text-lg), 5.5vw, var(--text-2xl));
+  }
+  .large .plain {
+    text-align: center;
+    font-size: var(--text-md, var(--text-lg));
   }
   @media (prefers-reduced-motion: reduce) {
     .line {

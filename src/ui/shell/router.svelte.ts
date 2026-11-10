@@ -148,6 +148,8 @@ export interface Toast {
 }
 
 export const TOAST_MS = 3500;
+/** Toasts carrying an action (Undo) stay longer. */
+export const TOAST_ACTION_MS = 5000;
 
 /** Transient UI state shared by the shell, player bar and now-playing view. */
 export class UiState {
@@ -188,7 +190,7 @@ export class UiState {
   toast(message: string, action?: Toast['action']): number {
     const id = this.nextToast++;
     this.toasts = [...this.toasts.slice(-2), { id, message, action }];
-    setTimeout(() => this.dismissToast(id), TOAST_MS);
+    setTimeout(() => this.dismissToast(id), action ? TOAST_ACTION_MS : TOAST_MS);
     return id;
   }
 

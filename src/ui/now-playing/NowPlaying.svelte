@@ -256,7 +256,8 @@
 
   function coverDown(e: PointerEvent) {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
-    if (busy) return;
+    tapStart = { x: e.clientX, y: e.clientY };
+    if (busy || lyricsOpen) return;
     swipeStart(e);
     cover = {
       x: e.clientX, y: e.clientY, id: e.pointerId, mode: null,
@@ -333,6 +334,34 @@
     e.stopPropagation();
     e.preventDefault();
   }
+
+  // Tap on the cover flips it to large lyrics and back. Lines / buttons inside keep their own click.
+  let tapStart: { x: number; y: number } | null = null;
+  let lyricsOpen = $state(false);
+  let lyricsReady = $state(false);
+  function coverTap(e: MouseEvent) {
+    if ((e.target as HTMLElement).closest('button')) return;
+    const t = tapStart;
+    if (t && Math.hypot(e.clientX - t.x, e.clientY - t.y) > 10) return;
+    toggleLyrics();
+  }
+  function toggleLyrics() {
+    lyricsOpen = !lyricsOpen;
+    if (!lyricsOpen) lyricsReady = false;
+  }
+  function lyricsLoaded(has: boolean) {
+    if (!lyricsOpen) return;
+    if (has) lyricsReady = true;
+    else {
+      lyricsOpen = false;
+      lyricsReady = false;
+      ui.toast('No lyrics');
+    }
+  }
+  function seekLine(ms: number) {
+    haptic('tick');
+    void actions.guard(() => player.seek(ms));
+  }
   function coverWheel(e: WheelEvent) {
     const dir = wheel.add(e.deltaX, e.deltaY, e.timeStamp);
     if (dir) skip(dir);
@@ -393,6 +422,7 @@
       <IconButton icon="sliders" label="Sound & quality" onclick={() => (ui.sheet = { kind: 'audio' })} />
       <IconButton icon="signal" label="Signal path" onclick={() => (ui.sheet = { kind: 'signal' })} />
       {#if item}
+        <IconButton icon="lyrics" label={lyricsOpen ? 'Show cover' : 'Show lyrics'} onclick={toggleLyrics} />
         <IconButton icon="info" label="Track info" onclick={() => (ui.sheet = { kind: 'tech', item })} />
       {/if}
     </div>
@@ -401,10 +431,17 @@
   <div class="layout">
     <div class="left">
       {#if item}
-        <div class="cover" class:paused class:live={dragLive} role="presentation" bind:this={coverEl}
+        <div class="cover" class:paused class:live={dragLive} class:lyrics={lyricsOpen} role="presentation" bind:this={coverEl}
           onpointerdown={coverDown} onpointermove={coverMove} onpointerup={coverUp} onpointercancel={coverCancel}
-          onclickcapture={coverClick} onwheel={coverWheel} ondragstart={(e) => e.preventDefault()}>
-          <div class="strip" bind:this={strip}>
+          onclickcapture={coverClick} onclick={coverTap} onwheel={coverWheel} ondragstart={(e) => e.preventDefault()}>
+          {#if lyricsOpen}
+            <div class="cover-lyrics" class:ready={lyricsReady}>
+              {#key item.id}
+                <Lyrics {item} large positionMs={player.positionMs} onseek={seekLine} onloaded={lyricsLoaded} />
+              {/key}
+            </div>
+          {/if}
+          <div class="strip" class:hidden={lyricsReady} bind:this={strip}>
             <div class="slide"><Artwork {item} size={640} fill /></div>
             {#if peek}
               <div class="slide peek" class:before={peek.dir === 'previous'} aria-hidden="true">
@@ -552,6 +589,7 @@
     margin: 0 auto;
   }
   .cover {
+    position: relative;
     width: min(100%, 48vh);
     margin: 0 auto;
     transition: transform var(--duration-slow) var(--ease-out);
@@ -652,6 +690,33 @@
   }
   .strip {
     position: relative;
+    transition: opacity var(--duration) var(--ease-out);
+  }
+  .strip.hidden {
+    opacity: 0;
+  }
+  .cover.lyrics {
+    touch-action: pan-y;
+    cursor: pointer;
+  }
+  .cover-lyrics {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    background: var(--surface-2);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--duration) var(--ease-out);
+  }
+  .cover-lyrics.ready {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  :global(:root[data-motion='reduced']) .strip,
+  :global(:root[data-motion='reduced']) .cover-lyrics {
+    transition: none;
   }
   .cover.live .strip {
     will-change: transform;

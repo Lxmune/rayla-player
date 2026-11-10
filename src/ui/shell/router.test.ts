@@ -89,6 +89,20 @@ describe('Router.lastNav', () => {
 });
 
 describe('UiState', () => {
+  it('toasts with an action stay for TOAST_ACTION_MS', () => {
+    vi.useFakeTimers();
+    try {
+      const ui = new UiState();
+      ui.toast('x', { label: 'Undo', run: () => {} });
+      vi.advanceTimersByTime(TOAST_MS);
+      expect(ui.toasts).toHaveLength(1);
+      vi.advanceTimersByTime(2000);
+      expect(ui.toasts).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('toasts keep the last three and auto-dismiss', () => {
     vi.useFakeTimers();
     try {

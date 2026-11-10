@@ -13,7 +13,20 @@ const count = (tracks: BaseItem[]) =>
 
 export function createActions(app: RaylaApp, ui?: UiState) {
   const { core } = app;
-  const toast = (message: string) => ui?.toast(message);
+  const toast = (message: string, action?: { label: string; run: () => void }) =>
+    ui?.toast(message, action);
+  const queueUids = () => new Set(core.player.queue.map((e) => e.uid));
+  /** Undo for a queue add: removes exactly the entries that appeared since `before`. */
+  const undoQueueAdd = (before: Set<number>) => ({
+    label: 'Undo',
+    run: () => {
+      const q = core.player.queue;
+      for (let i = q.length - 1; i >= 0; i--) {
+        const e = q[i];
+        if (e && !before.has(e.uid)) void core.player.removeAt(i);
+      }
+    },
+  });
 
   /** Runs `fn`, reporting a failure; never rejects. Resolves to fn's value or undefined. */
   async function guard<T>(fn: () => Promise<T> | T): Promise<T | undefined> {
@@ -55,13 +68,19 @@ export function createActions(app: RaylaApp, ui?: UiState) {
       }),
     playNext: (tracks: BaseItem[]) =>
       guard(async () => {
+        const before = queueUids();
+        const had = core.player.current !== null;
         await core.player.playNext(tracks);
-        if (tracks.length > 0) toast(`${count(tracks)} will play next`);
+        if (tracks.length > 0)
+          toast(`${count(tracks)} will play next`, had ? undoQueueAdd(before) : undefined);
       }),
     addToQueue: (tracks: BaseItem[]) =>
       guard(async () => {
+        const before = queueUids();
+        const had = core.player.current !== null;
         await core.player.addToQueue(tracks);
-        if (tracks.length > 0) toast(`Added ${count(tracks)} to the queue`);
+        if (tracks.length > 0)
+          toast(`Added ${count(tracks)} to the queue`, had ? undoQueueAdd(before) : undefined);
       }),
     /** Play next / add to queue for a container item (album, playlist, artist). */
     playItemNext: (item: BaseItem) =>
@@ -116,7 +135,19 @@ export function createActions(app: RaylaApp, ui?: UiState) {
       guard(async () => {
         const ids = entries.map((t) => t.playlistItemId).filter((id): id is string => id !== null);
         await client().removeFromPlaylist(playlist.id, ids);
-        toast(`Removed ${count(entries)} from “${playlist.name}”`);
+        toast(
+          `Removed ${count(entries)} from “${playlist.name}”`,
+          entries.length > 0
+            ? {
+                label: 'Undo',
+                run: () => {
+                  void guard(() =>
+                    client().addToPlaylist(playlist.id, entries.map((t) => t.id)),
+                  );
+                },
+              }
+            : undefined,
+        );
       }),
     /** Loads the album / first artist of an item as a full item (for navigation). */
     albumOf: (item: BaseItem) =>

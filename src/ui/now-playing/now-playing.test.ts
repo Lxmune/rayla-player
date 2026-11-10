@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, describe, expect, it } from 'vitest';
+import { createActions } from '../common/actions';
 import { flush, track } from '../../lib/test-support';
 import { buildApp, signedIn, withContext } from '../testing';
 import NowPlaying from './NowPlaying.svelte';
@@ -69,7 +70,7 @@ describe('SleepTimerButton', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Sleep timer' }));
     const entries = ctx.ui.menu?.entries ?? [];
     expect(entries.filter((e) => e !== 'separator').map((e) => (e as { label: string }).label)).toEqual([
-      '15 minutes', '30 minutes', '45 minutes', '60 minutes', '90 minutes', 'End of track', 'Cancel timer',
+      '15 minutes', '30 minutes', '45 minutes', '60 minutes', '90 minutes', 'End of track', 'End of album', 'Cancel timer',
     ]);
     (entries[1] as { onselect: () => void }).onselect();
     await flush();
@@ -119,5 +120,32 @@ describe('SeekBar', () => {
     expect(localStorage.getItem('rayla.showRemaining')).toBe('1');
     await fireEvent.click(screen.getByRole('button', { name: '-3:00' }));
     expect(localStorage.getItem('rayla.showRemaining')).toBe('0');
+  });
+});
+
+describe('queue undo toasts', () => {
+  it('Undo removes exactly the entries just added', async () => {
+    const { app } = await signedIn();
+    await app.core.player.playQueue([track('a'), track('b')]);
+    const ctx = withContext(app);
+    const actions = createActions(app, ctx.ui);
+    await actions.addToQueue([track('x'), track('y')]);
+    await actions.playNext([track('n')]);
+    expect(ids(app)).toEqual(['a', 'n', 'b', 'x', 'y']);
+    ctx.ui.toasts.at(-1)?.action?.run();
+    await flush();
+    expect(ids(app)).toEqual(['a', 'b', 'x', 'y']);
+  });
+});
+
+describe('NowPlaying cover lyrics', () => {
+  it('tapping the cover with no lyrics toasts once and keeps the cover', async () => {
+    const { app } = await signedIn();
+    await app.core.player.playQueue([track('a')]);
+    const ctx = withContext(app);
+    const { container } = render(NowPlaying, { context: ctx.context });
+    await fireEvent.click(container.querySelector('.cover') as HTMLElement);
+    await waitFor(() => expect(ctx.ui.toasts.map((t) => t.message)).toContain('No lyrics'));
+    expect(container.querySelector('.cover-lyrics')).toBeNull();
   });
 });
