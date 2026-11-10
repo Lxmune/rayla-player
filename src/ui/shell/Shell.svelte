@@ -399,6 +399,9 @@
   .scroller {
     flex: 1;
     min-height: 0;
+    /* Vertical only: overflow-y alone makes x 'auto' too, and anything wider than the
+       screen (a page sliding in, a swiped row) would let the whole page pan sideways. */
+    overflow-x: hidden;
     overflow-y: auto;
   }
   .content {

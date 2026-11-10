@@ -153,6 +153,9 @@
   .open {
     display: flex;
     flex-direction: column;
+    /* Explicit: a <button> flex box otherwise lets the title grow to its text
+       width, so long titles never ellipsize and widen the page. */
+    align-items: stretch;
     gap: 2px;
     width: 100%;
     min-width: 0;

@@ -246,12 +246,13 @@
   }
   .two-col {
     display: grid;
-    grid-template-columns: 1fr;
+    /* minmax(0, …): long titles ellipsize instead of widening the page. */
+    grid-template-columns: minmax(0, 1fr);
     column-gap: var(--space-5);
   }
   @media (min-width: 1100px) {
     .two-col {
-      grid-template-columns: 1fr 1fr;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
     }
   }
   .muted {
