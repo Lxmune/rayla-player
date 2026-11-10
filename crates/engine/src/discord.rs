@@ -681,7 +681,8 @@ mod tests {
         assert!(body.contains("\"large_text\":\"Album\""));
         assert!(!body.contains("small_image"));
         assert!(body.contains("{\"label\":\"b1\",\"url\":\"https://e/1\"}"));
-        assert!(!body.contains("b2"));
+        // Not just "b2": the random hex nonce can contain that by chance.
+        assert!(!body.contains("\"label\":\"b2\""));
     }
 
     #[test]
