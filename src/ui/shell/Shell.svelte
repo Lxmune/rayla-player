@@ -372,8 +372,8 @@
   .shell {
     display: flex;
     flex-direction: column;
-    height: 100vh;
-    height: 100dvh;
+    height: calc(100vh - var(--sai-top, 0px));
+    height: calc(100dvh - var(--sai-top, 0px));
     /* Edge-to-edge on Android/iOS: keep clear of the status bar / notch. */
     padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) 0 env(safe-area-inset-left, 0px);
     background: var(--bg);

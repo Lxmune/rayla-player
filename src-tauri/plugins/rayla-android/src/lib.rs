@@ -98,6 +98,43 @@ async fn list_audio_outputs<R: Runtime>(app: AppHandle<R>) -> Result<Vec<OutputD
     }
 }
 
+/// Mirrors `SystemInsets` in `src/lib/android.ts` (CSS px).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SystemInsets {
+    pub top: f64,
+}
+
+#[command]
+async fn get_system_insets<R: Runtime>(app: AppHandle<R>) -> Result<SystemInsets, String> {
+    #[cfg(target_os = "android")]
+    return native(&app)?
+        .run_mobile_plugin_async("getSystemInsets", ())
+        .await
+        .map_err(|e| e.to_string());
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = app;
+        Ok(SystemInsets::default())
+    }
+}
+
+/// Status / navigation bar icon colour and the window colour behind the bars.
+#[command]
+async fn set_system_bars<R: Runtime>(app: AppHandle<R>, light_background: bool, background: String) -> Result<(), String> {
+    #[cfg(target_os = "android")]
+    native(&app)?
+        .run_mobile_plugin_async::<()>(
+            "setSystemBars",
+            serde_json::json!({ "lightBackground": light_background, "background": background }),
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+    #[cfg(not(target_os = "android"))]
+    let _ = (app, light_background, background);
+    Ok(())
+}
+
 /// Used by `addPluginListener`: forwards the JS channel to the Kotlin plugin.
 #[command]
 async fn register_listener<R: Runtime>(
@@ -133,6 +170,8 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             update_now_playing,
             clear_now_playing,
             list_audio_outputs,
+            get_system_insets,
+            set_system_bars,
             register_listener,
             remove_listener
         ])

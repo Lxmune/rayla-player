@@ -67,3 +67,27 @@ export const onMediaAction = (cb: (a: MediaAction) => void) => listen<MediaActio
 
 /** Event `outputs-changed` (device plugged / unplugged), empty payload. */
 export const onAudioOutputsChanged = (cb: () => void) => listen<unknown>('outputs-changed', () => cb());
+
+// ------------------------------------------------------------ system bars
+
+/** System bar sizes in CSS px. The app draws under the status bar; navigation bar and keyboard are padded natively. */
+export interface SystemInsets {
+  top: number;
+}
+
+export async function getSystemInsets(): Promise<SystemInsets> {
+  if (!isAndroid) return { top: 0 };
+  return invoke<SystemInsets>(`plugin:${PLUGIN}|get_system_insets`);
+}
+
+/** Event `insets-changed` (rotation, cutout, multi-window), payload `SystemInsets`. */
+export const onSystemInsetsChanged = (cb: (i: SystemInsets) => void) => listen<SystemInsets>('insets-changed', cb);
+
+/**
+ * Status / navigation bar look: dark icons over a light app (`lightBackground`), light icons
+ * otherwise; `background` (#rrggbb) fills the window behind the bars (e.g. the gesture bar).
+ */
+export async function setSystemBars(style: { lightBackground: boolean; background: string }): Promise<void> {
+  if (!isAndroid) return;
+  await invoke(`plugin:${PLUGIN}|set_system_bars`, style);
+}

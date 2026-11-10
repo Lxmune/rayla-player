@@ -7,6 +7,7 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import dev.rayla.androidplugin.SystemBars
 
 class MainActivity : TauriActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
@@ -18,8 +19,10 @@ class MainActivity : TauriActivity() {
     super.onCreate(savedInstanceState)
     window.decorView.setBackgroundColor(Color.rgb(0x0b, 0x0b, 0x0c))
 
-    // Android WebView doesn't report system bars through CSS env(), so keep
-    // the page inside them (and above the keyboard) by padding its parent.
+    // Android WebView doesn't report system bars through CSS env(). The page
+    // draws under the status bar (its colours show behind the clock) and keeps
+    // clear of it with --sai-top, which the rayla-android plugin hands to JS;
+    // sides, navigation bar and keyboard are kept clear by padding the parent.
     val content = findViewById<View>(android.R.id.content)
     ViewCompat.setOnApplyWindowInsetsListener(content) { view, insets ->
       val bars = insets.getInsets(
@@ -27,7 +30,8 @@ class MainActivity : TauriActivity() {
           WindowInsetsCompat.Type.displayCutout() or
           WindowInsetsCompat.Type.ime()
       )
-      view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+      view.setPadding(bars.left, 0, bars.right, bars.bottom)
+      SystemBars.reportTop(bars.top, resources.displayMetrics.density)
       WindowInsetsCompat.CONSUMED
     }
   }

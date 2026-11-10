@@ -15,6 +15,7 @@ import android.os.Looper
 import android.webkit.WebView
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.core.view.WindowCompat
 import app.tauri.annotation.Command
 import app.tauri.annotation.InvokeArg
 import app.tauri.annotation.TauriPlugin
@@ -34,6 +35,14 @@ class NowPlayingInfo {
     var playing: Boolean = false
     var canPrevious: Boolean = false
     var canNext: Boolean = false
+}
+
+@InvokeArg
+class SystemBarsArgs {
+    /** True when the app behind the bars is light: dark status / navigation icons. */
+    var lightBackground: Boolean = false
+    /** #rrggbb shown behind the bars where the page doesn't draw (navigation bar). */
+    var background: String = "#09090b"
 }
 
 @InvokeArg
@@ -96,6 +105,37 @@ class RaylaAndroidPlugin(private val activity: Activity) : Plugin(activity) {
             invoke.resolve()
         } catch (e: Exception) {
             invoke.reject(e.message ?: "update failed")
+        }
+    }
+
+    /** Event `insets-changed` with the current `SystemInsets`. */
+    fun insetsChanged() {
+        trigger("insets-changed", insetsObject())
+    }
+
+    private fun insetsObject() = JSObject().apply { put("top", SystemBars.topDp.toDouble()) }
+
+    @Command
+    fun getSystemInsets(invoke: Invoke) {
+        invoke.resolve(insetsObject())
+    }
+
+    @Command
+    fun setSystemBars(invoke: Invoke) {
+        try {
+            val args = invoke.parseArgs(SystemBarsArgs::class.java)
+            val color = android.graphics.Color.parseColor(args.background)
+            main.post {
+                val window = activity.window
+                window.decorView.setBackgroundColor(color)
+                WindowCompat.getInsetsController(window, window.decorView).apply {
+                    isAppearanceLightStatusBars = args.lightBackground
+                    isAppearanceLightNavigationBars = args.lightBackground
+                }
+            }
+            invoke.resolve()
+        } catch (e: Exception) {
+            invoke.reject(e.message ?: "set system bars failed")
         }
     }
 

@@ -41,6 +41,8 @@
     display: flex;
     flex-direction: column;
     height: 100vh;
+    /* Android draws the app under the status bar; --sai-top is its height (set by ThemeManager). */
+    padding-top: var(--sai-top, 0px);
   }
   .body {
     flex: 1;

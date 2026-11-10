@@ -1,12 +1,14 @@
 ## Default Permission
 
-Media notification, media actions and audio outputs on Android (no-ops elsewhere).
+Media notification, media actions, audio outputs and system bars on Android (no-ops elsewhere).
 
 #### This default permission set includes the following:
 
 - `allow-update-now-playing`
 - `allow-clear-now-playing`
 - `allow-list-audio-outputs`
+- `allow-get-system-insets`
+- `allow-set-system-bars`
 - `allow-register-listener`
 - `allow-remove-listener`
 
@@ -41,6 +43,32 @@ Enables the clear_now_playing command without any pre-configured scope.
 <td>
 
 Denies the clear_now_playing command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`rayla-android:allow-get-system-insets`
+
+</td>
+<td>
+
+Enables the get_system_insets command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`rayla-android:deny-get-system-insets`
+
+</td>
+<td>
+
+Denies the get_system_insets command without any pre-configured scope.
 
 </td>
 </tr>
@@ -119,6 +147,32 @@ Enables the remove_listener command without any pre-configured scope.
 <td>
 
 Denies the remove_listener command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`rayla-android:allow-set-system-bars`
+
+</td>
+<td>
+
+Enables the set_system_bars command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`rayla-android:deny-set-system-bars`
+
+</td>
+<td>
+
+Denies the set_system_bars command without any pre-configured scope.
 
 </td>
 </tr>

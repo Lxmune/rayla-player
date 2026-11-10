@@ -353,8 +353,9 @@
     animation: np-open 300ms var(--ease-out);
     transform-origin: 50% 100%;
     will-change: transform;
-    padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px)
-      env(safe-area-inset-left, 0px);
+    /* Fixed over everything, so it pads itself; on Android its gradient shows behind the status bar. */
+    padding: var(--sai-top, env(safe-area-inset-top, 0px)) env(safe-area-inset-right, 0px)
+      env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
   }
   .np.settling {
     transition:

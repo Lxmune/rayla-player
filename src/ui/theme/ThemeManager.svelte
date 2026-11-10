@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { getSystemInsets, isAndroid, onSystemInsetsChanged, setSystemBars, type SystemInsets } from '../../lib/android';
   import { getApp } from '../../lib/app.svelte';
   import { imageItemId } from '../../lib/jellyfin/models';
   import { httpFetch } from '../../lib/platform';
@@ -25,6 +26,33 @@
 
   $effect(() => {
     root.setAttribute('data-theme', resolved);
+    // Android: status bar icons and the colour behind the system bars follow the theme.
+    if (isAndroid) {
+      const bg = getComputedStyle(root).getPropertyValue('--bg').trim();
+      void setSystemBars({
+        lightBackground: resolved === 'light',
+        background: /^#[0-9a-f]{6}$/i.test(bg) ? bg : resolved === 'light' ? '#f6f6f7' : '#09090b',
+      }).catch(() => {});
+    }
+  });
+
+  // --- Android status bar ---------------------------------------------------
+  // The app draws under the status bar; --sai-top keeps content clear of it.
+  $effect(() => {
+    if (!isAndroid) return;
+    const set = (i: SystemInsets) => root.style.setProperty('--sai-top', `${i.top}px`);
+    let un: (() => void) | null = null;
+    let live = true;
+    void getSystemInsets()
+      .then(set)
+      .catch(() => {});
+    void onSystemInsetsChanged(set)
+      .then((u) => (live ? (un = u) : u()))
+      .catch(() => {});
+    return () => {
+      live = false;
+      un?.();
+    };
   });
   $effect(() => {
     root.setAttribute('data-density', appearance.density);
