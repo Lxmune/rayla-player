@@ -90,6 +90,21 @@ describe('AlbumScreen', () => {
     expect(dl.started.map((r) => r.id)).toEqual(['t1', 't2']);
   });
 
+  it('rows show a progress ring while downloading and a glyph when downloaded', async () => {
+    const { app, dl } = await signedIn({ 'GET /Items': tracks() });
+    dl.manual = true;
+    render(AlbumScreen, { props: { item: album }, context: withContext(app).context });
+    await screen.findByText('Second Song');
+    void app.core.downloads.download([parseBaseItem(trackJson('t1', 'First Song', { index: 1 }))]);
+    await flush();
+    dl.emitProgress({ id: 't1', receivedBytes: 40, totalBytes: 100 });
+    await flush();
+    expect(screen.getByRole('img', { name: 'Downloading 40 %' })).toBeTruthy();
+    dl.finish('t1');
+    await flush();
+    expect(screen.getByRole('img', { name: 'Downloaded' })).toBeTruthy();
+  });
+
   it('reports a load failure inline', async () => {
     const { app } = await signedIn({});
     render(AlbumScreen, { props: { item: album }, context: withContext(app).context });
@@ -135,7 +150,7 @@ describe('PlayerBar', () => {
     expect(screen.queryByText('Bit-perfect')).toBeNull();
     engine.emit({
       kind: 'signalPathChanged', state: 'playing', trackId: 't1', entryId: null, positionMs: 0,
-      durationMs: 0, message: null, throughputBps: 0,
+      durationMs: 0, message: null, throughputBps: 0, cachedBytes: 0, totalBytes: 0,
       signalPath: {
         codec: 'flac', sourceSampleRate: 96000, sourceBitDepth: 24, channels: 2, stages: [],
         deviceName: 'DAC', outputSampleRate: 96000, outputBitDepth: 24, exclusive: true, bitPerfect: true,

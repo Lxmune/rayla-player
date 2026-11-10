@@ -5,6 +5,7 @@
   import Artwork from '../common/Artwork.svelte';
   import Icon from '../common/Icon.svelte';
   import IconButton from '../common/IconButton.svelte';
+  import TrackState from '../common/TrackState.svelte';
   import { useActions } from '../common/actions';
   import { formatTime } from '../common/format';
   import { useItemMenu } from '../common/item-menu';
@@ -120,6 +121,7 @@
           <span class="title">{entry.item.name}</span>
           <span class="artist">{artistLine(entry.item)}</span>
         </span>
+        <TrackState state={app.core.trackStates.get(entry.item.id)} detailed />
         <span class="dur">{dur(itemDurationMs(entry.item))}</span>
       </button>
       <span class="actions">
@@ -149,6 +151,12 @@
         <button type="button" class="link" onclick={() => (saving = !saving)}>Save as playlist</button>
       </div>
     </header>
+    {#if player.radio}
+      <p class="radio">
+        <span>Radio · {player.radio.label}</span>
+        <button type="button" class="link" onclick={() => player.stopRadio()}>Stop</button>
+      </p>
+    {/if}
     {#if saving}
       <form class="save" onsubmit={savePlaylist}>
         <input type="text" aria-label="Playlist name" placeholder="Playlist name" bind:value={playlistName} />
@@ -185,6 +193,21 @@
 {/if}
 
 <style>
+  .radio {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    margin: 0;
+    padding: var(--space-2) var(--space-4);
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+  }
+  .radio span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   .panel {
     display: flex;
     flex-direction: column;

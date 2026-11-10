@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
+import { memoryKv } from '../platform';
 import { parseBaseItem } from '../jellyfin/models';
 import { EngineErrors } from '../player/errors.svelte';
 import { FakeDownloadsEngine, FakeHttp, fakeClient, flush, track } from '../test-support';
 import {
   DownloadsStore,
   extensionFor,
+  pendingKey,
   formatBytes,
   progressFraction,
   type DownloadProgress,
@@ -204,6 +206,106 @@ describe('DownloadsStore', () => {
     engine.finish('a');
     await done;
     expect(store.active.size).toBe(0);
+  });
+
+  describe('resume', () => {
+    function makeKv() {
+      const engine = new FakeDownloadsEngine();
+      const client = fakeClient(new FakeHttp());
+      const kv = memoryKv();
+      const mk = () => new DownloadsStore({ engine, client: () => client, kv, profileId: () => 'p1' });
+      return { engine, kv, mk };
+    }
+    const saved = (kv: ReturnType<typeof memoryKv>) =>
+      JSON.parse(kv.get(pendingKey('p1')) ?? '[]').map((i: { Id: string }) => i.Id);
+
+    it('remembers unfinished downloads without secrets, and clears them when done', async () => {
+      const { engine, kv, mk } = makeKv();
+      engine.manual = true;
+      const store = mk();
+      await store.load();
+      const done = store.download([track('a'), track('b')]);
+      await flush();
+      expect(saved(kv)).toEqual(['a', 'b']);
+      expect(kv.get(pendingKey('p1'))).not.toContain('tok');
+      engine.finish('a');
+      await flush();
+      engine.finish('b');
+      await done;
+      expect(kv.get(pendingKey('p1'))).toBeNull();
+    });
+
+    it('a new store restarts them; failed ones stay listed and can be retried', async () => {
+      const { engine, kv, mk } = makeKv();
+      engine.failures.set('a', 'boom');
+      const first = mk();
+      await first.load();
+      await first.download([track('a')]);
+      expect(first.failed.get('a')?.reason).toBe('boom');
+      expect(saved(kv)).toEqual(['a']);
+
+      engine.failures.clear();
+      const second = mk();
+      await second.load();
+      await second.resume();
+      expect(second.isDownloaded('a')).toBe(true);
+      expect(kv.get(pendingKey('p1'))).toBeNull();
+    });
+
+    it('retry and retryAll requeue failures; dismiss forgets one', async () => {
+      const { engine, kv, mk } = makeKv();
+      engine.failures.set('a', 'x');
+      engine.failures.set('b', 'y');
+      engine.failures.set('c', 'z');
+      const store = mk();
+      await store.load();
+      await store.download([track('a'), track('b'), track('c')]);
+      store.dismiss('c');
+      expect(saved(kv)).toEqual(['a', 'b']);
+      engine.failures.delete('a');
+      await store.retry('a');
+      expect(store.isDownloaded('a')).toBe(true);
+      engine.failures.clear();
+      await store.retryAll();
+      expect(store.isDownloaded('b')).toBe(true);
+      expect(store.failed.size).toBe(0);
+      expect(kv.get(pendingKey('p1'))).toBeNull();
+    });
+
+    it('a profile switch mid-download keeps each pending item under the profile that queued it', async () => {
+      const engine = new FakeDownloadsEngine();
+      const client = fakeClient(new FakeHttp());
+      const kv = memoryKv();
+      let profile = 'p1';
+      engine.manual = true;
+      const store = new DownloadsStore({ engine, client: () => client, kv, profileId: () => profile });
+      await store.load();
+      void store.download([track('a')]);
+      await flush();
+      profile = 'p2';
+      void store.download([track('b')]);
+      await flush();
+      const ids = (p: string) => JSON.parse(kv.get(pendingKey(p)) ?? '[]').map((i: { Id: string }) => i.Id);
+      expect(ids('p1')).toEqual(['a']);
+      expect(ids('p2')).toEqual(['b']);
+      engine.finish('a');
+      await flush();
+      expect(kv.get(pendingKey('p1'))).toBeNull();
+      expect(ids('p2')).toEqual(['b']);
+    });
+
+    it('cancel removes the download from the pending list', async () => {
+      const { engine, kv, mk } = makeKv();
+      engine.manual = true;
+      const store = mk();
+      await store.load();
+      void store.download([track('a'), track('b')]);
+      await flush();
+      store.cancel('b');
+      expect(saved(kv)).toEqual(['a']);
+      store.cancel('a');
+      expect(kv.get(pendingKey('p1'))).toBeNull();
+    });
   });
 
   it('formatBytes is re-exported for the downloads screen', () => {

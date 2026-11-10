@@ -104,7 +104,10 @@
 
   {#if failures.length > 0}
     <section>
-      <h2>Failed</h2>
+      <div class="head">
+        <h2>Failed</h2>
+        <button type="button" class="btn" onclick={() => void dl.retryAll()}>Retry all</button>
+      </div>
       <ul>
         {#each failures as f (f.item.id)}
           <li class="item">
@@ -112,6 +115,8 @@
               <span class="name">{f.item.name}</span>
               <span class="sub error">{f.reason}</span>
             </div>
+            <button type="button" class="btn" aria-label={`Retry ${f.item.name}`} onclick={() => void dl.retry(f.item.id)}>Retry</button>
+            <IconButton icon="close" size={16} label={`Dismiss ${f.item.name}`} onclick={() => dl.dismiss(f.item.id)} />
           </li>
         {/each}
       </ul>

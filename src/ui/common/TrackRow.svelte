@@ -3,6 +3,7 @@
   import { artistLine, itemDurationMs, type BaseItem } from '../../lib/jellyfin/models';
   import Artwork from './Artwork.svelte';
   import Icon from './Icon.svelte';
+  import TrackState from './TrackState.svelte';
   import IconButton from './IconButton.svelte';
   import { formatTime } from './format';
   import { useActions } from './actions';
@@ -39,7 +40,8 @@
   const isCurrent = $derived(player.current?.id === track.id);
   const playing = $derived(isCurrent && player.isPlaying);
   const favorite = $derived(app.core.favorites.isFavorite(track));
-  const downloaded = $derived(app.core.downloads.isDownloaded(track.id));
+  const availability = $derived(app.core.trackStates.get(track.id));
+  const hasDownload = $derived(availability.kind === 'downloaded' || availability.kind === 'downloading');
   const ui = getUi();
   const router = getRouter();
   const menuFor = useItemMenu();
@@ -109,12 +111,11 @@
   {/if}
   <span class="extras">
     <IconButton icon="plus" label={`Add ${track.name} to queue`} size={16} onclick={() => void actions.addToQueue([track])} />
-    {#if downloaded}
-      <span class="dl" title="Downloaded" role="img" aria-label="Downloaded"><Icon name="check" size={16} /></span>
-    {:else}
+    {#if !hasDownload}
       <IconButton icon="download" label={`Download ${track.name}`} size={16} onclick={() => actions.download([track])} />
     {/if}
   </span>
+  <span class="state"><TrackState state={availability} /></span>
   <span class="fav" class:on={favorite}>
     <IconButton
       icon={favorite ? 'heartFill' : 'heart'}
@@ -339,12 +340,11 @@
       opacity: 1;
     }
   }
-  .dl {
+  .state {
+    flex: none;
     display: inline-flex;
-    align-items: center;
+    width: 18px;
     justify-content: center;
-    width: 36px;
-    color: var(--success);
   }
   .fav {
     flex: none;

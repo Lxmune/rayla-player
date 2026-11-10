@@ -5,6 +5,7 @@
 
 import { untrack } from 'svelte';
 import { DownloadsStore, type DownloadsEngine } from './downloads/store.svelte';
+import { TrackStates } from './track-states.svelte';
 import { FavoritesStore } from './jellyfin/favorites.svelte';
 import { JellyfinRemote, RemoteController } from './jellyfin/remote';
 import { SessionStore, type Secrets } from './jellyfin/session.svelte';
@@ -19,7 +20,7 @@ import { SettingsStore, type SettingsEngine } from './settings/store.svelte';
 export type CoreEngine = PlayerEngine &
   SettingsEngine &
   DownloadsEngine &
-  Pick<Ipc, 'engineInitError'>;
+  Pick<Ipc, 'engineInitError' | 'cacheStats' | 'cacheClear' | 'cacheSetLimit' | 'cachedTracks'>;
 
 export interface CoreDeps {
   engine: CoreEngine;
@@ -41,6 +42,8 @@ export interface Core {
   player: PlayerController;
   sleep: SleepTimer;
   downloads: DownloadsStore;
+  /** Download / stream-cache availability per track id. */
+  trackStates: TrackStates;
   favorites: FavoritesStore;
   remote: RemoteController;
   /** Engine failure banner state. */
@@ -69,6 +72,8 @@ export function createCore(deps: CoreDeps): Core {
     engine: deps.engine,
     client: () => sessions.client,
     errors,
+    kv: deps.kv,
+    profileId: () => sessions.active?.id ?? null,
   });
   const player = new PlayerController({
     engine: deps.engine,
@@ -78,6 +83,13 @@ export function createCore(deps: CoreDeps): Core {
     errors,
     random: deps.random,
     now: deps.now,
+  });
+  const trackStates = new TrackStates({
+    engine: deps.engine,
+    downloads,
+    player,
+    settings,
+    client: () => sessions.client,
   });
   const sleep = new SleepTimer({ player, now: deps.now });
   const favorites = new FavoritesStore(() => sessions.client);
@@ -165,6 +177,7 @@ export function createCore(deps: CoreDeps): Core {
     await downloads.load();
     await sessions.load();
     restoreResume();
+    void downloads.resume();
     resumeReady = true;
     started = true;
     await remote.sync(sessions.client);
@@ -180,9 +193,10 @@ export function createCore(deps: CoreDeps): Core {
     await remote.stop();
     player.dispose();
     downloads.dispose();
+    trackStates.dispose();
   }
 
-  return { sessions, settings, player, sleep, downloads, favorites, remote, errors, start, dispose };
+  return { sessions, settings, player, sleep, downloads, trackStates, favorites, remote, errors, start, dispose };
 }
 
 /** The real app: Tauri IPC, Rust-routed fetch, localStorage, OS keychain. */

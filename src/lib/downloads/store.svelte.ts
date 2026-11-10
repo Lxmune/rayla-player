@@ -5,6 +5,7 @@ import type { DownloadRecord, Ipc } from '../ipc';
 import type { JellyfinClient } from '../jellyfin/client';
 import { baseItemToJson, firstMediaSource, formatBytes, parseBaseItem, type BaseItem } from '../jellyfin/models';
 import { errorMessage, type EngineErrors } from '../player/errors.svelte';
+import type { KeyValueStore } from '../platform';
 
 export { formatBytes };
 
@@ -62,7 +63,14 @@ export interface DownloadsDeps {
   /** The active Jellyfin client, or null when signed out. */
   client: () => JellyfinClient | null;
   errors?: EngineErrors;
+  /** With `profileId`, unfinished downloads are remembered here and can be resumed. */
+  kv?: KeyValueStore;
+  /** Active profile id, or null when signed out. */
+  profileId?: () => string | null;
 }
+
+/** kv key of a profile's unfinished downloads. */
+export const pendingKey = (profileId: string) => `downloads.pending.${profileId}`;
 
 export class DownloadsStore {
   /** True once the Rust-side index has been read. */
@@ -92,6 +100,8 @@ export class DownloadsStore {
   private readonly deps: DownloadsDeps;
   private queue: string[] = [];
   private cancelled = new Set<string>();
+  /** Item id → profile that queued it (where its pending record is kept). */
+  private owners = new Map<string, string>();
   private pumping = false;
   private idlePromise: Promise<void> = Promise.resolve();
   private unlisten: (() => void) | null = null;
@@ -156,18 +166,21 @@ export class DownloadsStore {
   /** Queues `tracks` (skipping ones already downloaded or queued). Resolves when the queue drained. */
   async download(tracks: BaseItem[]): Promise<void> {
     await this.ready;
+    const owner = this.deps.profileId?.() ?? null;
     const active = new Map(this.active);
     const failed = new Map(this.failed);
     for (const t of tracks) {
       if (t.type !== 'Audio') continue;
       if (this.entries.has(t.id) || active.has(t.id)) continue;
       active.set(t.id, { item: t, receivedBytes: 0, totalBytes: 0, started: false });
+      if (owner !== null && !this.owners.has(t.id)) this.owners.set(t.id, owner);
       failed.delete(t.id);
       this.cancelled.delete(t.id);
       this.queue.push(t.id);
     }
     this.active = active;
     this.failed = failed;
+    this.persist();
     if (!this.pumping) this.idlePromise = this.pump();
     return this.idlePromise;
   }
@@ -191,11 +204,12 @@ export class DownloadsStore {
     if (p === null) active.delete(id);
     else active.set(id, p);
     this.active = active;
+    if (p === null) this.persist();
   }
 
   private fail(item: BaseItem, reason: string): void {
-    this.setActive(item.id, null);
     this.failed = new Map(this.failed).set(item.id, { item, reason });
+    this.setActive(item.id, null);
   }
 
   private async fetchOne(item: BaseItem): Promise<void> {
@@ -226,6 +240,63 @@ export class DownloadsStore {
     }
   }
 
+  /**
+   * Unfinished downloads (queued, running, failed), kept for the next start under the
+   * profile that queued each one (a profile switch mid-download must not move them).
+   */
+  private persist(): void {
+    const { kv } = this.deps;
+    if (!kv) return;
+    const byOwner = new Map<string, unknown[]>();
+    for (const owner of this.owners.values()) byOwner.set(owner, []);
+    const unfinished = new Set<string>();
+    for (const { item } of [...this.active.values(), ...this.failed.values()]) {
+      const owner = this.owners.get(item.id);
+      if (owner === undefined || this.cancelled.has(item.id)) continue;
+      unfinished.add(item.id);
+      byOwner.get(owner)?.push(baseItemToJson(item));
+    }
+    for (const [owner, items] of byOwner) {
+      kv.set(pendingKey(owner), items.length === 0 ? null : JSON.stringify(items));
+    }
+    for (const id of [...this.owners.keys()]) if (!unfinished.has(id)) this.owners.delete(id);
+  }
+
+  /** Restarts the unfinished downloads remembered for the active profile. */
+  async resume(): Promise<void> {
+    const { kv, profileId } = this.deps;
+    const profile = profileId?.() ?? null;
+    if (!kv || !profile || !this.deps.client()) return;
+    let items: BaseItem[] = [];
+    try {
+      const raw = kv.get(pendingKey(profile));
+      const parsed: unknown = raw ? JSON.parse(raw) : [];
+      if (Array.isArray(parsed)) items = parsed.map(parseBaseItem).filter((i) => i.id !== '');
+    } catch {
+      return;
+    }
+    if (items.length > 0) await this.download(items);
+  }
+
+  /** Queues a failed download again. */
+  retry(id: string): Promise<void> {
+    const f = this.failed.get(id);
+    return f ? this.download([f.item]) : Promise.resolve();
+  }
+
+  retryAll(): Promise<void> {
+    return this.download([...this.failed.values()].map((f) => f.item));
+  }
+
+  /** Forgets a failed download. */
+  dismiss(id: string): void {
+    if (!this.failed.has(id)) return;
+    const failed = new Map(this.failed);
+    failed.delete(id);
+    this.failed = failed;
+    this.persist();
+  }
+
   /** Cancels a queued or running download. */
   cancel(id: string): void {
     const queuedAt = this.queue.indexOf(id);
@@ -238,6 +309,7 @@ export class DownloadsStore {
     if (!p) return;
     if (p.started) {
       this.cancelled.add(id);
+      this.persist();
       this.deps.engine.downloadsCancel(id).catch(() => {});
     } else {
       this.setActive(id, null);
