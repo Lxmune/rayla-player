@@ -1,3 +1,5 @@
+import { diagnostics } from '../diagnostics.svelte';
+
 // The most recent engine failure (failed call or `error` event). The shell
 // shows it as a dismissible, non-fatal banner.
 
@@ -16,6 +18,7 @@ export class EngineErrors {
 
   report(error: unknown): void {
     this.message = errorMessage(error);
+    diagnostics.log('error', 'engine-errors', this.message);
   }
 
   clear(): void {

@@ -1,7 +1,14 @@
 <script lang="ts">
   import { getApp } from '../../lib/app.svelte';
   import type { EqBand, EqBandKind } from '../../lib/ipc';
-  import { AutoEqFormatError, parseAutoEq } from '../../lib/integrations/autoeq';
+  import {
+    AutoEqFormatError,
+    parseAutoEq,
+    type AutoEqEntry,
+    type AutoEqProfile,
+  } from '../../lib/integrations/autoeq';
+  import { getUi } from '../shell/router.svelte';
+  import AutoEqPicker from './AutoEqPicker.svelte';
   import { errorMessage } from '../../lib/player/errors.svelte';
   import RangeRow from './RangeRow.svelte';
   import Section from './Section.svelte';
@@ -9,6 +16,8 @@
 
   const settings = getApp().core.settings;
   const dsp = $derived(settings.current.dsp);
+
+  const ui = getUi();
 
   let importError = $state<string | null>(null);
   let skipped = $state<string[]>([]);
@@ -38,6 +47,18 @@
   }
   function addBand() {
     setBands((bands) => [...bands, { kind: 'peak', freqHz: 1000, gainDb: 0, q: 1 }]);
+  }
+
+  async function applyPicked(profile: AutoEqProfile, entry: AutoEqEntry) {
+    await settings.updateDsp({
+      eqBands: profile.bands,
+      eqPreampDb: profile.preampDb,
+      eqEnabled: true,
+    });
+    importError = null;
+    skipped = profile.skipped;
+    imported = `Applied AutoEQ: ${entry.name}`;
+    ui?.toast(`Applied AutoEQ: ${entry.name}`);
   }
 
   async function importFile(e: Event & { currentTarget: HTMLInputElement }) {
@@ -145,6 +166,7 @@
 
   <div class="actions">
     <button type="button" class="btn" onclick={addBand}>Add band</button>
+    <AutoEqPicker onapply={applyPicked} />
     <label class="btn file">
       Import AutoEQ…
       <input type="file" accept=".txt" class="visually-hidden" onchange={importFile} />
@@ -168,7 +190,7 @@
   .num { display: flex; align-items: center; gap: var(--space-1); }
   .num input { width: 88px; }
   .unit { font-size: var(--text-xs); color: var(--text-muted); }
-  .actions { display: flex; gap: var(--space-2); margin-top: var(--space-2); }
+  .actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-2); }
   .file { position: relative; display: inline-block; }
   .file:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
   .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
