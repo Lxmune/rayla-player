@@ -1,0 +1,112 @@
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { parseBaseItem } from '../../lib/jellyfin/models';
+import { flush, trackJson } from '../../lib/test-support';
+import AddToPlaylistSheet from '../sheets/AddToPlaylistSheet.svelte';
+import { signedIn, withContext } from '../testing';
+import AlbumScreen from './AlbumScreen.svelte';
+import HomeScreen from './HomeScreen.svelte';
+import SearchScreen from './SearchScreen.svelte';
+
+beforeEach(() => localStorage.clear());
+afterEach(() => cleanup());
+
+const items = (...ts: Record<string, unknown>[]) => ({ Items: ts, TotalRecordCount: ts.length, StartIndex: 0 });
+const albumJson = { Id: 'al1', Name: 'Great Album', Type: 'MusicAlbum', AlbumArtist: 'Artist', ChildCount: 10 };
+
+describe('HomeScreen', () => {
+  it('renders shelves and quick-play tiles for a populated library', async () => {
+    const { app } = await signedIn({ 'GET /Items': items(albumJson) });
+    render(HomeScreen, { context: withContext(app).context });
+    await screen.findByRole('heading', { name: 'Recently added' });
+    expect(screen.getByRole('heading', { name: 'Recently played' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Rediscover' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: /^Good (morning|afternoon|evening|night)$/ })).toBeTruthy();
+    expect((await screen.findAllByRole('button', { name: 'Play Great Album' })).length).toBeGreaterThan(0);
+  });
+
+  it('hides shelves that have no items', async () => {
+    const { app } = await signedIn({ 'GET /Items': items() });
+    render(HomeScreen, { context: withContext(app).context });
+    await screen.findByText(/library looks empty/);
+    expect(screen.queryByRole('heading', { name: 'Recently added' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Most played' })).toBeNull();
+  });
+});
+
+describe('AddToPlaylistSheet', () => {
+  const tracks = [parseBaseItem(trackJson('t1', 'First Song'))];
+  const playlists = items({ Id: 'p1', Name: 'Road Trip', Type: 'Playlist', ChildCount: 3 });
+
+  it('adds the tracks to the chosen playlist and closes', async () => {
+    const { app, http } = await signedIn({ 'GET /Items': playlists, 'POST /Playlists/p1/Items': {} });
+    const onclose = vi.fn();
+    render(AddToPlaylistSheet, { props: { tracks, onclose }, context: withContext(app).context });
+    await fireEvent.click(await screen.findByRole('button', { name: /Road Trip/ }));
+    await waitFor(() => expect(onclose).toHaveBeenCalled());
+    const req = http.requests.find((r) => r.method === 'POST' && r.path === '/Playlists/p1/Items');
+    expect(req?.query.Ids).toBe('t1');
+  });
+
+  it('creates a new playlist with the tracks', async () => {
+    const { app, http } = await signedIn({ 'GET /Items': playlists, 'POST /Playlists': { Id: 'new1' } });
+    const onclose = vi.fn();
+    render(AddToPlaylistSheet, { props: { tracks, onclose }, context: withContext(app).context });
+    await screen.findByRole('button', { name: /Road Trip/ });
+    await fireEvent.input(screen.getByLabelText('New playlist name'), { target: { value: 'Fresh' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+    await waitFor(() => expect(onclose).toHaveBeenCalled());
+    const req = http.requests.find((r) => r.method === 'POST' && r.path === '/Playlists');
+    expect(req?.body).toMatchObject({ Name: 'Fresh', Ids: ['t1'] });
+  });
+
+  it('filters playlists by name', async () => {
+    const { app } = await signedIn({ 'GET /Items': playlists });
+    render(AddToPlaylistSheet, { props: { tracks, onclose: () => {} }, context: withContext(app).context });
+    await screen.findByRole('button', { name: /Road Trip/ });
+    await fireEvent.input(screen.getByLabelText('Filter playlists'), { target: { value: 'zzz' } });
+    expect(screen.getByText('No matching playlists.')).toBeTruthy();
+  });
+});
+
+describe('SearchScreen', () => {
+  it('records a recent search when a result is opened', async () => {
+    const { app } = await signedIn({ 'GET /Items': items(albumJson) });
+    const ctx = withContext(app);
+    ctx.ui.searchTerm = 'great';
+    render(SearchScreen, { context: ctx.context });
+    const open = (await screen.findAllByRole("button", { name: /Great Album/ }, { timeout: 2000 }))[0]!;
+    await fireEvent.click(open);
+    expect(JSON.parse(localStorage.getItem('rayla.recentSearches') ?? '[]')).toEqual(['great']);
+    expect(ctx.router.current.name).toBe('album');
+  });
+
+  it('records on Enter and lists recents when the term is empty', async () => {
+    const { app } = await signedIn({ 'GET /Items': items() });
+    const ctx = withContext(app);
+    render(SearchScreen, { context: ctx.context });
+    const input = screen.getByLabelText('Search the library') as HTMLInputElement;
+    await fireEvent.input(input, { target: { value: 'queen' } });
+    await fireEvent.keyDown(input, { key: 'Enter' });
+    expect(localStorage.getItem('rayla.recentSearches')).toContain('queen');
+    await screen.findByText('No results.', {}, { timeout: 2000 });
+
+    await fireEvent.input(input, { target: { value: '' } });
+    await fireEvent.click(await screen.findByRole('button', { name: 'queen' }));
+    expect(ctx.ui.searchTerm).toBe('queen');
+  });
+});
+
+describe('album hero', () => {
+  it('shows the format badge and kind from the first track', async () => {
+    const { app } = await signedIn({
+      'GET /Items': items(trackJson('t1', 'First Song', { index: 1 }), trackJson('t2', 'Second Song', { index: 2 })),
+    });
+    render(AlbumScreen, { props: { item: parseBaseItem(albumJson) }, context: withContext(app).context });
+    await screen.findByText('First Song');
+    await flush();
+    expect(screen.getByText('FLAC · 24/96')).toBeTruthy();
+    expect(screen.getByText('Single')).toBeTruthy();
+    expect(screen.getByText('2 tracks')).toBeTruthy();
+  });
+});
