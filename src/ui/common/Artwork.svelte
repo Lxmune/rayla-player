@@ -1,8 +1,10 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import { getApp } from '../../lib/app.svelte';
-  import { imageItemId, type BaseItem } from '../../lib/jellyfin/models';
+  import type { BaseItem } from '../../lib/jellyfin/models';
   import Icon from './Icon.svelte';
   import { nameGradient } from './format';
+  import { artworkSource, isDecoded, preloadImage, type ImageSource } from './image-cache';
 
   let {
     item,
@@ -18,20 +20,43 @@
     fill?: boolean;
   } = $props();
 
+  /** A slow new cover replaces the old one after this long anyway (then fades in). */
+  const SWAP_TIMEOUT_MS = 800;
+
   const app = getApp();
-  const client = $derived(app.core.sessions.client);
-  const tag = $derived(item.primaryImageTag ?? item.albumPrimaryImageTag);
-  const url = (width: number) =>
-    client ? client.imageUrl(imageItemId(item), { maxWidth: Math.round(width), tag }) : null;
   // Requested at 2x so high-density screens stay sharp; the 1x candidate is for plain ones.
-  const src = $derived(url(size * 2));
-  const srcset = $derived.by(() => {
-    const one = url(size);
-    return one && src ? `${one} 1x, ${src} 2x` : undefined;
-  });
+  const source = $derived(artworkSource(app.core.sessions.client, item, size));
+
+  // What the <img> shows. When the item changes (next track, recycled row) the old
+  // cover stays until the new one is decoded, so nothing flashes in between.
+  let shown = $state.raw<ImageSource | null>(null);
   let failedSrc = $state<string | null>(null);
   let loadedSrc = $state<string | null>(null);
-  const broken = $derived(src === null || failedSrc === src);
+
+  $effect(() => {
+    const next = source;
+    const cur = untrack(() => shown);
+    if (next === null || cur === null || cur.src === next.src || isDecoded(next)) {
+      // First image (normal fade-in), same image, or already decoded: swap now.
+      shown = next;
+      if (next && isDecoded(next)) loadedSrc = next.src;
+      return;
+    }
+    let live = true;
+    const swap = (decoded: boolean) => {
+      if (!live) return;
+      shown = next;
+      if (decoded) loadedSrc = next.src;
+    };
+    void preloadImage(next).then(swap);
+    const timer = setTimeout(() => swap(false), SWAP_TIMEOUT_MS);
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+  });
+
+  const broken = $derived(shown === null || failedSrc === shown.src);
   const gradient = $derived(nameGradient(item.name));
 </script>
 
@@ -42,16 +67,17 @@
   style:aspect-ratio="1 / 1"
   style:--placeholder={gradient}
 >
-  {#if !broken && src}
+  {#if !broken && shown}
+    {@const s = shown}
     <img
-      {src}
-      {srcset}
+      src={s.src}
+      srcset={s.srcset}
       alt={item.name}
-      class:loaded={loadedSrc === src}
+      class:loaded={loadedSrc === s.src}
       loading="lazy"
       decoding="async"
-      onload={() => (loadedSrc = src)}
-      onerror={() => (failedSrc = src)}
+      onload={() => (loadedSrc = s.src)}
+      onerror={() => (failedSrc = s.src)}
     />
   {:else}
     <div class="placeholder" role="img" aria-label={item.name}>

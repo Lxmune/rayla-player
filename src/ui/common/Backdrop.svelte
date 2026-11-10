@@ -1,30 +1,55 @@
 <script lang="ts">
   import { getApp } from '../../lib/app.svelte';
-  import { imageItemId, type BaseItem } from '../../lib/jellyfin/models';
+  import type { BaseItem } from '../../lib/jellyfin/models';
+  import { backdropSource, preloadImage } from './image-cache';
 
   // Blurred cover art filling its positioned parent, fading into --bg at the
   // bottom. Renders nothing when Appearance › "Art backdrop" is off.
+  // A new cover is decoded first, then cross-fades over the old one (never a
+  // blank frame in between).
   let { item, intensity = 0.55 }: { item: BaseItem | null; intensity?: number } = $props();
+
+  /** Matches the fade-in animation (--duration-slow) plus a margin. */
+  const CROSSFADE_MS = 600;
 
   const app = getApp();
   const enabled = $derived(app.core.settings.current.appearance.artBackdrop);
-  const src = $derived.by(() => {
-    const client = app.core.sessions.client;
-    if (!client || !item || !enabled) return null;
-    return client.imageUrl(imageItemId(item), {
-      maxWidth: 160,
-      tag: item.primaryImageTag ?? item.albumPrimaryImageTag,
-    });
-  });
+  const src = $derived(enabled && item ? (backdropSource(app.core.sessions.client, item)?.src ?? null) : null);
+
+  /** Bottom to top; the last one is current, an older one stays only while the new fades in. */
+  let layers = $state<string[]>([]);
   let failed = $state<string | null>(null);
+
+  $effect(() => {
+    const next = src;
+    if (next === null) {
+      layers = [];
+      return;
+    }
+    let live = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    void preloadImage({ src: next }).then(() => {
+      if (!live) return;
+      const top = layers[layers.length - 1];
+      if (top === next) return;
+      layers = top === undefined ? [next] : [top, next];
+      timer = setTimeout(() => {
+        if (layers[layers.length - 1] === next) layers = [next];
+      }, CROSSFADE_MS);
+    });
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+  });
 </script>
 
 <div class="backdrop" aria-hidden="true">
-  {#if src && failed !== src}
-    {#key src}
-      <img {src} alt="" style:opacity={intensity} onerror={() => (failed = src)} />
-    {/key}
-  {/if}
+  {#each layers as layer (layer)}
+    {#if failed !== layer}
+      <img src={layer} alt="" style:opacity={intensity} onerror={() => (failed = layer)} />
+    {/if}
+  {/each}
   <div class="fade"></div>
 </div>
 
