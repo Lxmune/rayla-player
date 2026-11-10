@@ -57,6 +57,9 @@ pub struct DownloadProgress {
 struct IndexEntry {
     id: String,
     file: String,
+    /// Absolute folder holding `file` when it is not the default folder.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    dir: Option<String>,
     bytes: u64,
     added_at: String,
     item: serde_json::Value,
@@ -64,6 +67,8 @@ struct IndexEntry {
 
 pub struct DownloadStore {
     dir: PathBuf,
+    /// Folder for new downloads; `None` = `dir`.
+    custom: Mutex<Option<PathBuf>>,
     /// Serialises read-modify-write cycles on the index.
     lock: Mutex<()>,
 }
@@ -84,7 +89,7 @@ impl DownloadStore {
     pub fn new(dir: impl Into<PathBuf>) -> Result<Self> {
         let dir = dir.into();
         fs::create_dir_all(&dir).with_context(|| format!("create {}", dir.display()))?;
-        Ok(Self { dir, lock: Mutex::new(()) })
+        Ok(Self { dir, custom: Mutex::new(None), lock: Mutex::new(()) })
     }
 
     fn index_path(&self) -> PathBuf {
@@ -108,10 +113,42 @@ impl DownloadStore {
         Ok(())
     }
 
+    /// Where an entry's file lives.
+    fn entry_dir(&self, e: &IndexEntry) -> PathBuf {
+        e.dir.as_ref().map(PathBuf::from).unwrap_or_else(|| self.dir.clone())
+    }
+
+    /// Folder new downloads go to right now.
+    fn target_dir(&self) -> PathBuf {
+        self.custom.lock().unwrap().clone().unwrap_or_else(|| self.dir.clone())
+    }
+
+    /// Choose the folder for new downloads (`None`/empty = default). Creates it
+    /// and checks it is writable; on error the previous choice stays.
+    pub fn set_dir(&self, dir: Option<&str>) -> Result<()> {
+        let dir = dir.map(str::trim).filter(|d| !d.is_empty());
+        let Some(dir) = dir else {
+            *self.custom.lock().unwrap() = None;
+            return Ok(());
+        };
+        let path = PathBuf::from(dir);
+        if !path.is_absolute() {
+            bail!("downloads folder must be an absolute path: {dir}");
+        }
+        fs::create_dir_all(&path).with_context(|| format!("create {}", path.display()))?;
+        let probe = path.join(".rayla-write-test");
+        File::create(&probe)
+            .and_then(|mut f| f.write_all(b"x"))
+            .with_context(|| format!("{} is not writable", path.display()))?;
+        let _ = fs::remove_file(&probe);
+        *self.custom.lock().unwrap() = Some(path);
+        Ok(())
+    }
+
     fn record(&self, e: &IndexEntry) -> DownloadRecord {
         DownloadRecord {
             id: e.id.clone(),
-            path: self.dir.join(&e.file).to_string_lossy().into_owned(),
+            path: self.entry_dir(e).join(&e.file).to_string_lossy().into_owned(),
             bytes: e.bytes,
             added_at: e.added_at.clone(),
             item: e.item.clone(),
@@ -123,7 +160,7 @@ impl DownloadStore {
         let _g = self.lock.lock().unwrap();
         self.read_index()
             .iter()
-            .filter(|e| self.dir.join(&e.file).is_file())
+            .filter(|e| self.entry_dir(e).join(&e.file).is_file())
             .map(|e| self.record(e))
             .collect()
     }
@@ -136,7 +173,7 @@ impl DownloadStore {
             let e = entries.remove(pos);
             // Entry files come from our own index; still never follow a path.
             if Path::new(&e.file).components().count() == 1 {
-                match fs::remove_file(self.dir.join(&e.file)) {
+                match fs::remove_file(self.entry_dir(&e).join(&e.file)) {
                     Ok(()) => {}
                     Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
                     Err(err) => return Err(err.into()),
@@ -161,9 +198,12 @@ impl DownloadStore {
         let id = sanitize(&req.id, "id")?;
         let ext = sanitize(&req.extension, "extension")?;
         let file_name = format!("{id}.{ext}");
-        let final_path = self.dir.join(&file_name);
-        let part_path = self.dir.join(format!("{file_name}.part"));
-        let meta_path = self.dir.join(format!("{file_name}.part.meta"));
+        let target = self.target_dir();
+        let entry_dir = (target != self.dir).then(|| target.to_string_lossy().into_owned());
+        fs::create_dir_all(&target).with_context(|| format!("create {}", target.display()))?;
+        let final_path = target.join(&file_name);
+        let part_path = target.join(format!("{file_name}.part"));
+        let meta_path = target.join(format!("{file_name}.part.meta"));
 
         let result = self.fetch(req, &id, &part_path, &meta_path, &mut progress, cancel);
         let bytes = match result {
@@ -182,14 +222,16 @@ impl DownloadStore {
             let _g = self.lock.lock().unwrap();
             let mut entries = self.read_index();
             if let Some(old) = entries.iter().find(|e| e.id == id) {
-                if old.file != file_name && Path::new(&old.file).components().count() == 1 {
-                    let _ = fs::remove_file(self.dir.join(&old.file));
+                let old_path = self.entry_dir(old).join(&old.file);
+                if old_path != final_path && Path::new(&old.file).components().count() == 1 {
+                    let _ = fs::remove_file(old_path);
                 }
             }
             entries.retain(|e| e.id != id);
             let entry = IndexEntry {
                 id: id.clone(),
                 file: file_name.clone(),
+                dir: entry_dir.clone(),
                 bytes,
                 added_at: iso8601_now(),
                 item: req.item.clone(),
@@ -702,5 +744,63 @@ mod tests {
             .unwrap_err();
         assert!(err.to_string().contains("cancel"), "{err}");
         assert!(files(&dir).is_empty(), "{:?}", files(&dir));
+    }
+
+    #[test]
+    fn custom_dir_downloads_and_both_dirs_list_and_delete() {
+        let srv = TestServer::start(body(1000));
+        let dir = tmp("dl-custom-default");
+        let custom = tmp("dl-custom-dir");
+        let store = DownloadStore::new(&dir).unwrap();
+        store.download(&request(&srv, "old", "flac"), |_| {}, &AtomicBool::new(false)).unwrap();
+        store.set_dir(Some(custom.to_str().unwrap())).unwrap();
+        let rec = store
+            .download(&request(&srv, "new", "flac"), |_| {}, &AtomicBool::new(false))
+            .unwrap();
+        assert_eq!(rec.path, custom.join("new.flac").to_string_lossy());
+        assert_eq!(files(&custom), vec!["new.flac"]);
+        assert_eq!(files(&dir), vec!["index.json", "old.flac"]);
+        assert_eq!(store.list().len(), 2);
+        // A fresh store (new run, default folder) still lists both.
+        let again = DownloadStore::new(&dir).unwrap();
+        assert_eq!(again.list().len(), 2);
+        again.delete("new").unwrap();
+        store.delete("old").unwrap();
+        assert!(store.list().is_empty());
+        assert!(files(&custom).is_empty());
+        assert_eq!(files(&dir), vec!["index.json"]);
+        // Back to default.
+        store.set_dir(None).unwrap();
+        let rec = store
+            .download(&request(&srv, "x", "flac"), |_| {}, &AtomicBool::new(false))
+            .unwrap();
+        assert_eq!(rec.path, dir.join("x.flac").to_string_lossy());
+    }
+
+    #[test]
+    fn invalid_dir_errors_and_keeps_previous() {
+        let dir = tmp("dl-baddir");
+        let store = DownloadStore::new(&dir).unwrap();
+        assert!(store.set_dir(Some("relative/path")).is_err());
+        let blocker = dir.join("afile");
+        fs::write(&blocker, b"x").unwrap();
+        assert!(store.set_dir(Some(blocker.join("sub").to_str().unwrap())).is_err());
+        assert_eq!(store.target_dir(), dir);
+    }
+
+    #[test]
+    fn partial_in_old_dir_is_ignored_after_dir_change() {
+        let data = body(300_000);
+        let srv = TestServer::start(data.clone());
+        let dir = tmp("dl-part-old");
+        let custom = tmp("dl-part-new");
+        let store = DownloadStore::new(&dir).unwrap();
+        seed_part(&dir, "p.flac", &data[..100_000], Some(300_000));
+        store.set_dir(Some(custom.to_str().unwrap())).unwrap();
+        let rec = store
+            .download(&request(&srv, "p", "flac"), |_| {}, &AtomicBool::new(false))
+            .unwrap();
+        assert_eq!(srv.requests(), vec![String::new()]);
+        assert_eq!(fs::read(&rec.path).unwrap(), data);
     }
 }

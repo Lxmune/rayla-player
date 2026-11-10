@@ -146,19 +146,34 @@ impl Backend for AAudioBackend {
                         continue;
                     }
                 };
+                // Read back what AAudio actually granted; the signal path
+                // must report this, not what we asked for.
                 // SAFETY: getters on a live stream.
-                let (rate, channels, granted_excl) = unsafe {
+                let (rate, channels, granted_excl, granted_format, dev_id) = unsafe {
                     (
                         ffi::AAudioStream_getSampleRate(stream.ptr()),
                         ffi::AAudioStream_getChannelCount(stream.ptr()),
                         ffi::AAudioStream_getSharingMode(stream.ptr())
                             == ffi::AAUDIO_SHARING_MODE_EXCLUSIVE as i32,
+                        ffi::AAudioStream_getFormat(stream.ptr()),
+                        ffi::AAudioStream_getDeviceId(stream.ptr()),
                     )
+                };
+                // Format actually granted decides the sample type and depth.
+                let sample = [Sample::I16, Sample::I32, Sample::F32]
+                    .into_iter()
+                    .find(|s| s.aaudio() == granted_format)
+                    .unwrap_or(sample);
+                // Device names need JNI (AudioDeviceInfo); the id is the honest part.
+                let device_name = if dev_id > 0 {
+                    format!("Android audio (device {dev_id})")
+                } else {
+                    "Android audio".to_string()
                 };
                 check(unsafe { ffi::AAudioStream_requestStart(stream.ptr()) }, "start stream")?;
                 return Ok(Box::new(AAudioOutput {
                     info: OutputInfo {
-                        device_name: "System output".into(),
+                        device_name,
                         exclusive: granted_excl,
                         format: Format { rate: rate as u32, channels: channels as u32, bits: sample.bits() },
                     },

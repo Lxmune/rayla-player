@@ -183,6 +183,11 @@ fn downloads_cancel(state: State<'_, AppState>, id: String) -> Result<(), String
 }
 
 #[tauri::command]
+fn downloads_set_dir(state: State<'_, AppState>, dir: Option<String>) -> Result<(), String> {
+    store(&state)?.set_dir(dir.as_deref()).map_err(err)
+}
+
+#[tauri::command]
 fn downloads_delete(state: State<'_, AppState>, id: String) -> Result<(), String> {
     store(&state)?.delete(&id).map_err(err)
 }
@@ -253,6 +258,7 @@ pub fn run() {
             downloads_start,
             downloads_cancel,
             downloads_delete,
+            downloads_set_dir,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Rayla");
