@@ -17,7 +17,7 @@
   function load() {
     const client = app.core.sessions.client;
     if (!client) return;
-    void res.load(async () => (await client.genres({ limit: 500 })).items);
+    void res.load(async () => (await client.genres({ limit: 500 })).items, `${app.core.sessions.activeId}:genres`);
   }
 
   $effect(() => {

@@ -29,19 +29,23 @@
   const greeting = hour < 5 ? 'Good night' : hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
 
   function loadAll(client: JellyfinClient, fresh = false) {
-    void recs.load(() => forYou(client, Date.now(), fresh, app.skips.profile()));
+    // Cache keys: going back to Home shows the last data at once, then refreshes.
+    const k = (name: string) => `${app.core.sessions.activeId}:home:${name}`;
+    void recs.load(() => forYou(client, Date.now(), fresh, app.skips.profile()), k('recs'));
     void played.load(
       async () =>
         (await client.albums({ playedOnly: true, sortBy: 'DatePlayed', descending: true, limit: 20 })).items,
+      k('played'),
     );
-    void added.load(async () => (await client.recentlyAddedAlbums({ limit: 24 })).items);
+    void added.load(async () => (await client.recentlyAddedAlbums({ limit: 24 })).items, k('added'));
     void mostPlayed.load(
       async () =>
         (await client.tracks({ playedOnly: true, sortBy: 'PlayCount', descending: true, limit: 10 })).items,
+      k('most'),
     );
-    void rediscover.load(async () => (await client.albums({ sortBy: 'Random', limit: 20 })).items);
-    void favorites.load(async () => (await client.albums({ favoritesOnly: true, limit: 20 })).items);
-    void playlists.load(async () => (await client.playlists({ limit: 20 })).items);
+    void rediscover.load(async () => (await client.albums({ sortBy: 'Random', limit: 20 })).items, k('random'));
+    void favorites.load(async () => (await client.albums({ favoritesOnly: true, limit: 20 })).items, k('favs'));
+    void playlists.load(async () => (await client.playlists({ limit: 20 })).items, k('playlists'));
   }
 
   $effect(() => {

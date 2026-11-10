@@ -37,7 +37,7 @@
 
   function reload() {
     const client = app.core.sessions.client;
-    if (client) void tracksRes.load(() => load(client));
+    if (client) void tracksRes.load(() => load(client), `${app.core.sessions.activeId}:tracks:${item.id}`);
   }
 
   $effect(() => {
@@ -52,7 +52,11 @@
     const self = item.id;
     if (!client || !id || !isAlbum) return;
     untrack(
-      () => void moreRes.load(async () => (await client.artistAlbums(id)).items.filter((a) => a.id !== self)),
+      () =>
+        void moreRes.load(
+          async () => (await client.artistAlbums(id)).items.filter((a) => a.id !== self),
+          `${app.core.sessions.activeId}:more:${self}`,
+        ),
     );
   });
 

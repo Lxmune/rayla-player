@@ -19,7 +19,10 @@
   const page = new Resource<DiscoverPage>();
 
   function load(client: JellyfinClient, fresh = false) {
-    void page.load(() => discoverPage(client, Date.now(), fresh, app.skips.profile()));
+    void page.load(
+      () => discoverPage(client, Date.now(), fresh, app.skips.profile()),
+      `${app.core.sessions.activeId}:discover`,
+    );
   }
 
   $effect(() => {

@@ -12,6 +12,7 @@ import {
   memorySecrets,
 } from '../lib/test-support';
 import { Router, ROUTER_KEY, UI_KEY, UiState } from './shell/router.svelte';
+import { clearResourceCache } from './common/resource.svelte';
 
 export const AUTH_ROUTES = {
   'POST /Users/AuthenticateByName': {
@@ -26,6 +27,8 @@ export const AUTH_ROUTES = {
 };
 
 export function buildApp(routes: Record<string, unknown> = {}) {
+  // A fresh app is a fresh session: no screen data cached by an earlier test.
+  clearResourceCache();
   const engine = new FakeEngine();
   const dl = new FakeDownloadsEngine();
   const combined: CoreEngine = {

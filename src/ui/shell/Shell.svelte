@@ -35,6 +35,9 @@
   import { watchPhone } from './phone';
   import { ScrollMemory, nextChipsHidden, pullState, shouldStartPull, PULL_TRIGGER_PX } from './gestures';
   import { haptic } from '../common/haptics';
+  import { clearResourceCache } from '../common/resource.svelte';
+  import { VelocityTracker } from './gestures';
+  import { classifyEdgeDrag, decideEdgeRelease, edgeOffset, nextBackStep, startsAtEdge } from './edge-swipe';
   import { shortcutFor, type ShortcutAction } from './shortcuts';
   import {
     Router,
@@ -58,6 +61,7 @@
   // A new profile starts on Home with a clean overlay state.
   $effect(() => {
     return app.core.sessions.onActiveChange(() => {
+      clearResourceCache();
       router.go(app.core.settings.current.behavior.startScreen);
       ui.nowPlayingOpen = false;
       ui.sheet = null;
@@ -79,10 +83,11 @@
   const sync = new HistorySync({
     layers: () => layers,
     closeTop() {
-      if (ui.menu) ui.closeMenu();
-      else if (ui.sheet) ui.sheet = null;
-      else if (ui.nowPlayingOpen) ui.nowPlayingOpen = false;
-      else if (ui.queueOpen) ui.queueOpen = false;
+      const step = nextBackStep({ menu: !!ui.menu, sheet: !!ui.sheet, nowPlaying: ui.nowPlayingOpen, queue: ui.queueOpen });
+      if (step === 'menu') ui.closeMenu();
+      else if (step === 'sheet') ui.sheet = null;
+      else if (step === 'nowPlaying') ui.nowPlayingOpen = false;
+      else if (step === 'queue') ui.queueOpen = false;
       else router.up();
     },
   });
@@ -187,6 +192,76 @@
       el.removeEventListener('touchend', end);
       el.removeEventListener('touchcancel', end);
     };
+  });
+
+  // Edge swipe back (phone, touch): the page follows the finger, then commits or springs back.
+  let content: HTMLElement | undefined = $state();
+  let swiped = $state(false);
+  $effect(() => {
+    const el = scroller;
+    if (!el || !phone) return;
+    let sx = 0;
+    let sy = 0;
+    let mode: 'idle' | 'maybe' | 'drag' = 'idle';
+    let dxNow = 0;
+    const vel = new VelocityTracker();
+    const setX = (x: number, animate: boolean) => {
+      if (!content) return;
+      content.style.transition = animate ? 'transform 180ms var(--ease-out), opacity 180ms var(--ease-out)' : 'none';
+      content.style.transform = x ? `translate3d(${x}px,0,0)` : '';
+      content.style.opacity = x ? String(1 - Math.min(1, x / el.clientWidth) * 0.4) : '';
+    };
+    const start = (e: TouchEvent) => {
+      const t = e.touches[0];
+      mode = 'idle';
+      if (!t || e.touches.length > 1 || !router.canBack || !startsAtEdge(t.clientX, el.getBoundingClientRect().left)) return;
+      sx = t.clientX;
+      sy = t.clientY;
+      dxNow = 0;
+      vel.reset();
+      mode = 'maybe';
+    };
+    const move = (e: TouchEvent) => {
+      const t = e.touches[0];
+      if (!t || mode === 'idle') return;
+      const dx = t.clientX - sx;
+      if (mode === 'maybe') {
+        const c = classifyEdgeDrag(dx, t.clientY - sy);
+        if (c === 'cancel') return void (mode = 'idle');
+        if (c === 'none') return;
+        mode = 'drag';
+      }
+      if (e.cancelable) e.preventDefault();
+      dxNow = edgeOffset(dx, el.clientWidth);
+      vel.add(performance.now(), dxNow);
+      setX(dxNow, false);
+    };
+    const end = () => {
+      if (mode !== 'drag') return void (mode = 'idle');
+      mode = 'idle';
+      if (decideEdgeRelease(dxNow, vel.get(), el.clientWidth) === 'commit') {
+        haptic('tick');
+        swiped = true;
+        setX(0, false);
+        router.back();
+      } else {
+        setX(0, true);
+      }
+    };
+    el.addEventListener('touchstart', start, { passive: true });
+    el.addEventListener('touchmove', move, { passive: false });
+    el.addEventListener('touchend', end);
+    el.addEventListener('touchcancel', end);
+    return () => {
+      el.removeEventListener('touchstart', start);
+      el.removeEventListener('touchmove', move);
+      el.removeEventListener('touchend', end);
+      el.removeEventListener('touchcancel', end);
+    };
+  });
+  $effect.pre(() => {
+    void route;
+    if (router.lastNav !== 'back') swiped = false;
   });
 
   const isTyping = (t: EventTarget | null) =>
@@ -294,9 +369,9 @@
             </svg>
           </div>
         {/if}
-        <main class="content">
+        <main class="content" bind:this={content}>
           {#key route}{#key refreshKey}
-            <div class="page nav-{router.lastNav}" style:transform={pull > 0 ? `translateY(${pull * 0.5}px)` : undefined}
+            <div class="page nav-{router.lastNav}" class:swiped style:transform={pull > 0 ? `translateY(${pull * 0.5}px)` : undefined}
               class:released={!pulling}>
         {#if route.name === 'discover'}
           <DiscoverScreen />
@@ -432,10 +507,19 @@
   }
   .phone .page.nav-push,
   .phone .page.nav-forward {
-    animation: page-in-right-lg 280ms var(--ease-out);
+    animation: shell-in-right 170ms var(--ease-out);
   }
   .phone .page.nav-back {
-    animation: page-in-left-lg 280ms var(--ease-out);
+    animation: shell-in-left 170ms var(--ease-out);
+  }
+  .phone .page.swiped {
+    animation: none;
+  }
+  @keyframes shell-in-right {
+    from { opacity: 0; transform: translate3d(28px, 0, 0); }
+  }
+  @keyframes shell-in-left {
+    from { opacity: 0; transform: translate3d(-18px, 0, 0); }
   }
   .pull {
     position: absolute;

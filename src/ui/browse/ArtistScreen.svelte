@@ -39,12 +39,14 @@
     untrack(() => {
       filter = 'all';
       showAll = false;
-      void albums.load(async () => (await client.artistAlbums(id)).items);
+      const k = (name: string) => `${app.core.sessions.activeId}:artist:${id}:${name}`;
+      void albums.load(async () => (await client.artistAlbums(id)).items, k('albums'));
       void popular.load(
         async () =>
           (await client.tracks({ artistId: id, sortBy: 'PlayCount', descending: true, limit: 10 })).items,
+        k('popular'),
       );
-      void similar.load(async () => (await client.similar(id, 12)).items);
+      void similar.load(async () => (await client.similar(id, 12)).items, k('similar'));
     });
   });
 
