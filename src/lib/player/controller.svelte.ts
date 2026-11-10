@@ -634,7 +634,9 @@ export class PlayerController {
         const before = this.effectiveMaxBitrate;
         this.throughputBps = ewma(this.throughputBps, e.throughputBps);
         if (this.current !== null && this.effectiveMaxBitrate !== before) void this.armNext();
-        break;
+        // Network stats from the downloader, not playback: its `state` is not the
+        // player's, so listeners (scrobbling, Discord) must not see it.
+        return;
       }
       case 'signalPathChanged':
         this.signalPath = e.signalPath;

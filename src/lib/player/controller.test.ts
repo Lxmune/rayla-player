@@ -559,6 +559,15 @@ describe('PlayerController', () => {
       expect(t.engine.lastPrefetchIds).toEqual(['f']);
     });
 
+    it('keeps throughput events (state: stopped) away from listeners', async () => {
+      await t.player.playQueue(many, { startIndex: 0 });
+      const seen: string[] = [];
+      t.player.onEngineEvent((e) => seen.push(e.kind));
+      t.engine.throughput(5_000_000);
+      expect(seen).toEqual([]);
+      expect(t.player.throughputBps).toBe(5_000_000);
+    });
+
     it('wraps with repeat all, is empty for repeat one, off and stop', async () => {
       await t.player.playQueue(many, { startIndex: 4 });
       expect(t.engine.lastPrefetchIds).toEqual([]);
