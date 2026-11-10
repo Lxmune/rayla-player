@@ -46,4 +46,9 @@
   label:hover span { color: var(--text); }
   label.on span { background: var(--accent); color: var(--accent-contrast); font-weight: var(--weight-medium); }
   label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+  @media (max-width: 640px) {
+    .seg { flex: 1 1 100%; max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+    label { flex: 1; text-align: center; }
+    span { padding: var(--space-2) var(--space-3); }
+  }
 </style>

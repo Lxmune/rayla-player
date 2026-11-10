@@ -50,4 +50,8 @@
   .control { display: flex; align-items: center; gap: var(--space-3); }
   input { width: 160px; accent-color: var(--accent); }
   output { min-width: 64px; text-align: right; font-size: var(--text-sm); color: var(--text-muted); }
+  @media (max-width: 640px) {
+    .control { flex: 1 1 100%; }
+    input { flex: 1; width: auto; min-width: 0; height: 32px; }
+  }
 </style>

@@ -55,4 +55,8 @@
   .swatch[aria-pressed='true'] { border-color: var(--text); outline: 2px solid var(--bg); outline-offset: -4px; }
   .picker { width: 32px; height: 28px; padding: 0; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: none; cursor: pointer; }
   .hex { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--text-muted); min-width: 60px; }
+  @media (max-width: 640px) {
+    .colors { flex: 1 1 100%; justify-content: flex-start; }
+    .swatch { width: 32px; height: 32px; }
+  }
 </style>
