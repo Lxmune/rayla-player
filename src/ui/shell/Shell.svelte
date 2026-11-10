@@ -18,6 +18,7 @@
   import SongsScreen from '../browse/SongsScreen.svelte';
   import AddToPlaylistSheet from '../sheets/AddToPlaylistSheet.svelte';
   import ShortcutsSheet from '../sheets/ShortcutsSheet.svelte';
+  import OutputSheet from '../sheets/OutputSheet.svelte';
   import ContextMenu from '../common/ContextMenu.svelte';
   import Toasts from '../common/Toasts.svelte';
   import AccountSheet from '../login/AccountSheet.svelte';
@@ -44,7 +45,7 @@
   const actions = useActions();
   const route = $derived(router.current);
   const sheetTitle = $derived(
-    ({ signal: 'Signal path', tech: 'Track info', accounts: 'Servers', shortcuts: 'Keyboard shortcuts', addToPlaylist: 'Add to playlist' } as const)[
+    ({ signal: 'Signal path', tech: 'Track info', accounts: 'Servers', shortcuts: 'Keyboard shortcuts', addToPlaylist: 'Add to playlist', output: 'Output' } as const)[
       ui.sheet?.kind ?? 'signal'
     ],
   );
@@ -221,6 +222,8 @@
         <SignalPathSheet />
       {:else if ui.sheet.kind === 'tech'}
         <TechInfoSheet item={ui.sheet.item} />
+      {:else if ui.sheet.kind === 'output'}
+        <OutputSheet />
       {:else if ui.sheet.kind === 'shortcuts'}
         <ShortcutsSheet />
       {:else if ui.sheet.kind === 'addToPlaylist'}

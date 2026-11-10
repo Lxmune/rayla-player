@@ -94,7 +94,9 @@ export type SheetKind =
   | { kind: 'tech'; item: BaseItem }
   | { kind: 'accounts' }
   | { kind: 'shortcuts' }
-  | { kind: 'addToPlaylist'; tracks: BaseItem[] };
+  | { kind: 'addToPlaylist'; tracks: BaseItem[] }
+  /** Live output picker (device + exclusive), src/ui/sheets/OutputSheet.svelte. */
+  | { kind: 'output' };
 
 /** One context-menu row, or a divider. */
 export type MenuEntry =
