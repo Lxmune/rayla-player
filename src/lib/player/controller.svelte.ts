@@ -118,6 +118,8 @@ export class PlayerController {
    * so re-arming does not make the engine reopen the same track.
    */
   private repeatEntryId: string | null = null;
+  /** Position a restored (not yet loaded) track starts at on the first play(). */
+  private pendingSeekMs: number | null = null;
   private chain: Promise<void> = Promise.resolve();
   private readonly listeners = new Set<(e: PlayerEvent) => void>();
   private unlisten: (() => void) | null = null;
@@ -213,6 +215,34 @@ export class PlayerController {
     return mix.length;
   }
 
+  /**
+   * Puts a saved queue back without starting audio: the engine is untouched,
+   * the first play() loads the track and seeks to `positionMs`.
+   */
+  restore(snap: {
+    items: BaseItem[];
+    index: number;
+    positionMs: number;
+    shuffle: boolean;
+    repeat: RepeatMode;
+  }): void {
+    if (snap.items.length === 0) return;
+    const entries = snap.items.map((item) => this.entry(item));
+    const index = clamp(snap.index, 0, entries.length - 1);
+    this.original = entries;
+    this.queue = entries;
+    this.index = index;
+    this.shuffle = snap.shuffle;
+    this.repeat = snap.repeat;
+    this.playback = 'stopped';
+    this.durationMs = itemDurationMs(entries[index]?.item as BaseItem);
+    this.positionMs = Math.max(0, snap.positionMs);
+    this.pendingSeekMs = this.positionMs;
+    this.signalPath = null;
+    this.currentEntryId = null;
+    this.repeatEntryId = null;
+  }
+
   playNext(tracks: BaseItem[]): Promise<void> {
     const cur = this.currentEntry;
     if (!cur) return this.playQueue(tracks);
@@ -252,6 +282,16 @@ export class PlayerController {
     }
     this.queue = queue;
     if (i < this.index) this.index -= 1;
+    return this.armNext();
+  }
+
+  /** Removes every entry after the current one. */
+  removeUpcoming(): Promise<void> {
+    if (this.index < 0 || this.index >= this.queue.length - 1) return Promise.resolve();
+    const queue = this.queue.slice(0, this.index + 1);
+    const alive = new Set(queue.map((e) => e.uid));
+    this.original = this.original.filter((e) => alive.has(e.uid));
+    this.queue = queue;
     return this.armNext();
   }
 
@@ -317,7 +357,12 @@ export class PlayerController {
 
   play(): Promise<void> {
     if (!this.current) return Promise.resolve();
-    if (this.playback === 'stopped') return this.loadIndex(this.index);
+    if (this.playback === 'stopped') {
+      const at = this.pendingSeekMs;
+      const loaded = this.loadIndex(this.index);
+      if (at !== null && at > 0) return this.seek(at).then(() => loaded);
+      return loaded;
+    }
     return this.run(() => this.deps.engine.play());
   }
 
@@ -346,6 +391,11 @@ export class PlayerController {
   seek(positionMs: number): Promise<void> {
     if (!this.current) return Promise.resolve();
     this.positionMs = positionMs;
+    if (this.pendingSeekMs !== null) {
+      // Restored but not loaded yet: remember where the first play() starts.
+      this.pendingSeekMs = positionMs;
+      return Promise.resolve();
+    }
     this.reportProgress();
     return this.run(() => this.deps.engine.seek(positionMs));
   }
@@ -369,6 +419,7 @@ export class PlayerController {
     this.positionMs = 0;
     this.currentEntryId = null;
     this.repeatEntryId = null;
+    this.pendingSeekMs = null;
     return this.run(() => this.deps.engine.stop());
   }
 
@@ -435,6 +486,7 @@ export class PlayerController {
     this.repeatEntryId = null;
     this.currentEntryId = `${entry.uid}`;
     const request = this.request(i, this.currentEntryId);
+    this.pendingSeekMs = null;
     this.positionMs = 0;
     this.durationMs = itemDurationMs(entry.item);
     this.signalPath = null;

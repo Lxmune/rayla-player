@@ -155,4 +155,43 @@ describe('createCore', () => {
     await bad.start();
     expect(bad.errors.message).toBe('Audio engine failed to start: ipc down');
   });
+
+  it('resume playback: saves the queue and restores it paused on the next start', async () => {
+    const first = build();
+    await first.core.start();
+    await first.core.sessions.login('https://jf.test', 'ann', 'pw');
+    await flush();
+    await first.core.player.playQueue([track('a'), track('b')], { startIndex: 1 });
+    first.engine.state('paused');
+    first.engine.position('b', 12000);
+    await first.core.player.seek(12000);
+    first.engine.state('paused');
+    await flush();
+    await first.core.dispose();
+
+    const second = build({ kv: first.kv });
+    for (const [k, v] of first.secrets.store) second.secrets.store.set(k, v);
+    await second.core.start();
+    expect(second.core.player.queue.map((e) => e.item.id)).toEqual(['a', 'b']);
+    expect(second.core.player.current?.id).toBe('b');
+    expect(second.core.player.positionMs).toBe(12000);
+    expect(second.core.player.playback).toBe('stopped');
+    expect(second.engine.calls).not.toContain('load(b,true)');
+    await second.core.player.play();
+    expect(second.engine.calls).toContain('seek(12000)');
+    await second.core.dispose();
+  });
+
+  it('resume playback off: nothing is saved or restored', async () => {
+    const first = build();
+    await first.core.start();
+    await first.core.sessions.login('https://jf.test', 'ann', 'pw');
+    await first.core.settings.updateBehavior({ resumePlayback: false });
+    await first.core.player.playQueue([track('a')]);
+    await flush();
+    const id = first.core.sessions.active?.id ?? '';
+    expect(id).not.toBe('');
+    await first.core.dispose();
+    expect(first.kv.get(`player.resume.${id}`)).toBeNull();
+  });
 });

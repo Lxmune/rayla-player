@@ -490,4 +490,57 @@ describe('PlayerController', () => {
       expect(progress()).toBe(1);
     });
   });
+
+  it('removeUpcoming drops everything after the current entry', async () => {
+    await t.player.playQueue(album, { startIndex: 1 });
+    await t.player.removeUpcoming();
+    expect(ids()).toEqual(['a', 'b']);
+    expect(t.engine.lastNext).toBeNull();
+    t.player.toggleShuffle(); // original order must have been trimmed too
+    await t.player.toggleShuffle();
+    expect(ids()).toEqual(['a', 'b']);
+  });
+
+  describe('restore', () => {
+    const snap = (positionMs: number) => ({
+      items: album, index: 1, positionMs, shuffle: false, repeat: 'all' as const,
+    });
+
+    it('sets the queue paused without touching the engine', () => {
+      t.player.restore(snap(30000));
+      expect(ids()).toEqual(['a', 'b', 'c']);
+      expect(t.player.current?.id).toBe('b');
+      expect(t.player.positionMs).toBe(30000);
+      expect(t.player.repeat).toBe('all');
+      expect(t.player.playback).toBe('stopped');
+      expect(t.engine.calls).toEqual([]);
+    });
+
+    it('the first play loads the track and seeks to the saved position', async () => {
+      t.player.restore(snap(30000));
+      await t.player.play();
+      expect(t.engine.calls).toEqual(['load(b,true)', 'setNext(c)', 'seek(30000)']);
+      expect(t.player.positionMs).toBe(30000);
+    });
+
+    it('seeking before the first play only moves the start position', async () => {
+      t.player.restore(snap(30000));
+      await t.player.seek(5000);
+      expect(t.engine.calls).toEqual([]);
+      await t.player.togglePlay();
+      expect(t.engine.calls).toEqual(['load(b,true)', 'setNext(c)', 'seek(5000)']);
+    });
+
+    it('position 0 plays without a seek; clear forgets the pending seek', async () => {
+      t.player.restore(snap(0));
+      await t.player.play();
+      expect(t.engine.calls).toEqual(['load(b,true)', 'setNext(c)']);
+      t.player.restore(snap(9000));
+      await t.player.clear();
+      t.player.restore({ ...snap(0) });
+      t.engine.calls.length = 0;
+      await t.player.play();
+      expect(t.engine.calls.some((c) => c.startsWith('seek'))).toBe(false);
+    });
+  });
 });
