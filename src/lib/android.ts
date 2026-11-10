@@ -23,6 +23,8 @@ export interface NowPlayingInfo {
   playing: boolean;
   canPrevious: boolean;
   canNext: boolean;
+  /** Current track is a favourite (shows the like action filled). Optional for older callers. */
+  liked?: boolean;
 }
 
 /** Sent by the notification, lock screen, headset buttons or the OS. */
@@ -34,7 +36,10 @@ export type MediaAction =
   | { type: 'stop' }
   | { type: 'seek'; positionMs: number }
   /** Headphones unplugged / Bluetooth dropped: pause, per Android guidelines. */
-  | { type: 'noisy' };
+  | { type: 'noisy' }
+  /** Notification / lock-screen custom actions: toggle favourite, or "not for me" (skip + learn). */
+  | { type: 'like' }
+  | { type: 'dislike' };
 
 /** Starts (or updates) the foreground media service and its notification. */
 export async function updateNowPlaying(info: NowPlayingInfo): Promise<void> {
@@ -90,4 +95,49 @@ export const onSystemInsetsChanged = (cb: (i: SystemInsets) => void) => listen<S
 export async function setSystemBars(style: { lightBackground: boolean; background: string }): Promise<void> {
   if (!isAndroid) return;
   await invoke(`plugin:${PLUGIN}|set_system_bars`, style);
+}
+
+// ---------------------------------------------------------------- network
+
+/** `other` also covers desktop/unknown; only `cellular` counts as metered. */
+export type NetworkType = 'wifi' | 'ethernet' | 'cellular' | 'none' | 'other';
+
+export async function getNetworkType(): Promise<NetworkType> {
+  if (!isAndroid) return 'other';
+  return (await invoke<{ type: NetworkType }>(`plugin:${PLUGIN}|get_network_type`)).type;
+}
+
+/** Event `network-changed`, payload `{ type: NetworkType }`. */
+export const onNetworkChanged = (cb: (type: NetworkType) => void) =>
+  listen<{ type: NetworkType }>('network-changed', (p) => cb(p.type));
+
+// --------------------------------------------------- background playback
+
+/** Whether Android exempts the app from battery optimisation (true off Android). */
+export async function isIgnoringBatteryOptimizations(): Promise<boolean> {
+  if (!isAndroid) return true;
+  return (await invoke<{ value: boolean }>(`plugin:${PLUGIN}|is_ignoring_battery_optimizations`)).value;
+}
+
+/** Opens the system prompt to exempt the app from battery optimisation. */
+export async function requestIgnoreBatteryOptimizations(): Promise<void> {
+  if (!isAndroid) return;
+  await invoke(`plugin:${PLUGIN}|request_ignore_battery_optimizations`);
+}
+
+// ---------------------------------------------------------------- storage
+
+/** A place offline downloads can go: app-specific folders on internal storage and SD cards. */
+export interface StorageVolume {
+  /** Absolute directory path (writable by the app without permissions). */
+  path: string;
+  label: string;
+  removable: boolean;
+  freeBytes: number;
+  totalBytes: number;
+}
+
+export async function listStorageVolumes(): Promise<StorageVolume[]> {
+  if (!isAndroid) return [];
+  return (await invoke<{ volumes: StorageVolume[] }>(`plugin:${PLUGIN}|list_storage_volumes`)).volumes;
 }

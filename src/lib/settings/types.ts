@@ -80,6 +80,29 @@ export interface StreamingSettings {
   prefetchTracks: number;
   /** Stream-cache size cap in MB, CACHE_LIMITS_MB range. */
   cacheLimitMb: number;
+  /** On mobile data (Android cellular), cap streaming at `mobileMaxBitrate` instead of `maxBitrate`. */
+  mobileCapEnabled: boolean;
+  /** bits/s; null = original. Used only when mobileCapEnabled and on mobile data. */
+  mobileMaxBitrate: number | null;
+}
+
+export const CROSSFADE_MODES = ['always', 'shuffle'] as const;
+/** `shuffle`: crossfade only while shuffling or playing a radio (never inside one album either way). */
+export type CrossfadeMode = (typeof CROSSFADE_MODES)[number];
+
+export interface PlaybackSettings {
+  crossfadeMode: CrossfadeMode;
+  /** Remember the position of tracks at least this many minutes long; 0 = off. */
+  resumeLongTracksMin: number;
+  /** The sleep timer fades the volume out over its last minute. */
+  sleepFadeOut: boolean;
+}
+
+export interface DownloadSettings {
+  /** Start/continue offline downloads only on Wi-Fi / Ethernet (Android). */
+  wifiOnly: boolean;
+  /** Folder for new offline downloads; null = app default. See android.ts listStorageVolumes. */
+  dir: string | null;
 }
 
 export const CACHE_LIMIT_MIN_MB = 256;
@@ -93,6 +116,12 @@ export interface AppSettings {
   maxBitrate: number | null;
   streaming: StreamingSettings;
   dsp: DspConfig;
+  /** When on, each output device keeps its own DSP chain in `deviceDsp`. */
+  perDeviceDsp: boolean;
+  /** Output device id ('' = system default) -> its DSP chain. */
+  deviceDsp: Record<string, DspConfig>;
+  playback: PlaybackSettings;
+  downloads: DownloadSettings;
   themeMode: ThemeMode;
   appearance: AppearanceSettings;
   behavior: BehaviorSettings;
@@ -164,6 +193,19 @@ export const DEFAULT_STREAMING: StreamingSettings = {
   adaptive: false,
   prefetchTracks: 2,
   cacheLimitMb: 3072,
+  mobileCapEnabled: false,
+  mobileMaxBitrate: 320_000,
+};
+
+export const DEFAULT_PLAYBACK: PlaybackSettings = {
+  crossfadeMode: 'always',
+  resumeLongTracksMin: 20,
+  sleepFadeOut: true,
+};
+
+export const DEFAULT_DOWNLOADS: DownloadSettings = {
+  wifiOnly: false,
+  dir: null,
 };
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -172,6 +214,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   maxBitrate: null,
   streaming: DEFAULT_STREAMING,
   dsp: DEFAULT_DSP,
+  perDeviceDsp: false,
+  deviceDsp: {},
+  playback: DEFAULT_PLAYBACK,
+  downloads: DEFAULT_DOWNLOADS,
   themeMode: 'dark',
   appearance: DEFAULT_APPEARANCE,
   behavior: DEFAULT_BEHAVIOR,

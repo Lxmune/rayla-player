@@ -14,6 +14,8 @@ export type RootRoute =
   | 'genres'
   | 'playlists'
   | 'favorites'
+  | 'smart'
+  | 'stats'
   | 'downloads'
   | 'settings';
 

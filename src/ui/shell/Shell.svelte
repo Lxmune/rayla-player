@@ -2,6 +2,8 @@
   import { getApp } from '../../lib/app.svelte';
   import SettingsScreen from '../settings/SettingsScreen.svelte';
   import DownloadsScreen from '../downloads/DownloadsScreen.svelte';
+  import StatsScreen from '../browse/StatsScreen.svelte';
+  import SmartPlaylistsScreen from '../browse/SmartPlaylistsScreen.svelte';
   import SignalPathSheet from '../sheets/SignalPathSheet.svelte';
   import TechInfoSheet from '../sheets/TechInfoSheet.svelte';
   import AlbumScreen from '../browse/AlbumScreen.svelte';
@@ -135,7 +137,7 @@
   }
 
   // Pull to refresh (phone root screens): remounts the page so it refetches.
-  const PULL_ROUTES = ['home', 'discover', 'albums', 'artists', 'songs', 'playlists', 'genres', 'favorites', 'downloads'];
+  const PULL_ROUTES = ['home', 'discover', 'albums', 'artists', 'songs', 'playlists', 'genres', 'favorites', 'smart', 'stats', 'downloads'];
   const canPull = $derived(phone && PULL_ROUTES.includes(route.name));
   let pull = $state(0);
   let pulling = $state(false);
@@ -375,6 +377,10 @@
               class:released={!pulling}>
         {#if route.name === 'discover'}
           <DiscoverScreen />
+        {:else if route.name === 'stats'}
+          <StatsScreen />
+        {:else if route.name === 'smart'}
+          <SmartPlaylistsScreen />
         {:else if route.name === 'home'}
           <HomeScreen />
         {:else if route.name === 'artists'}

@@ -251,6 +251,11 @@ export const ipc = {
     invoke<DownloadRecord>('downloads_start', { request }),
   downloadsCancel: (id: string) => invoke<void>('downloads_cancel', { id }),
   downloadsDelete: (id: string) => invoke<void>('downloads_delete', { id }),
+  /**
+   * Folder for new offline downloads (null = app default). Existing files stay where they
+   * are (records keep their paths); the index stays in app data.
+   */
+  downloadsSetDir: (dir: string | null) => invoke<void>('downloads_set_dir', { dir }),
   onDownloadProgress: (cb: (p: DownloadProgress) => void): Promise<UnlistenFn> =>
     listen<DownloadProgress>(DOWNLOAD_PROGRESS_EVENT, (e) => cb(e.payload)),
 };

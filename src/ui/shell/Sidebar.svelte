@@ -28,6 +28,8 @@
     { id: 'genres', label: 'Genres', icon: 'tag' },
     { id: 'playlists', label: 'Playlists', icon: 'playlist' },
     { id: 'favorites', label: 'Favorites', icon: 'heart' },
+    { id: 'smart', label: 'Smart playlists', icon: 'filter' },
+    { id: 'stats', label: 'Stats', icon: 'clock' },
   ];
   const OFFLINE: NavItem[] = [{ id: 'downloads', label: 'Downloads', icon: 'download' }];
 

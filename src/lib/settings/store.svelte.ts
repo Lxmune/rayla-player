@@ -22,6 +22,9 @@ import {
   DEFAULT_DSP,
   DEFAULT_SETTINGS,
   DEFAULT_STREAMING,
+  DEFAULT_PLAYBACK,
+  DEFAULT_DOWNLOADS,
+  CROSSFADE_MODES,
   MAX_PREFETCH_TRACKS,
   CACHE_LIMIT_MAX_MB,
   CACHE_LIMIT_MIN_MB,
@@ -33,6 +36,8 @@ import {
   type Density,
   type DiscordButtonTemplate,
   type DiscordSettings,
+  type DownloadSettings,
+  type PlaybackSettings,
   type StreamingSettings,
   type ThemeMode,
 } from './types';
@@ -172,7 +177,24 @@ export function parseStreaming(j: unknown): StreamingSettings {
     adaptive: bool(o.adaptive, d.adaptive),
     prefetchTracks: Math.trunc(clampNum(o.prefetchTracks, 0, MAX_PREFETCH_TRACKS, d.prefetchTracks)),
     cacheLimitMb: Math.trunc(clampNum(o.cacheLimitMb, CACHE_LIMIT_MIN_MB, CACHE_LIMIT_MAX_MB, d.cacheLimitMb)),
+    mobileCapEnabled: bool(o.mobileCapEnabled, d.mobileCapEnabled),
+    mobileMaxBitrate: o.mobileMaxBitrate === null ? null : (num(o.mobileMaxBitrate) ?? d.mobileMaxBitrate),
   };
+}
+
+export function parsePlayback(j: unknown): PlaybackSettings {
+  const o: Json = isObj(j) ? j : {};
+  const d = DEFAULT_PLAYBACK;
+  return {
+    crossfadeMode: enumOf(CROSSFADE_MODES, o.crossfadeMode, d.crossfadeMode),
+    resumeLongTracksMin: Math.trunc(clampNum(o.resumeLongTracksMin, 0, 600, d.resumeLongTracksMin)),
+    sleepFadeOut: bool(o.sleepFadeOut, d.sleepFadeOut),
+  };
+}
+
+export function parseDownloads(j: unknown): DownloadSettings {
+  const o: Json = isObj(j) ? j : {};
+  return { wifiOnly: bool(o.wifiOnly, DEFAULT_DOWNLOADS.wifiOnly), dir: strOrNull(o.dir) };
 }
 
 export function parseSettings(j: unknown): AppSettings {
@@ -184,6 +206,12 @@ export function parseSettings(j: unknown): AppSettings {
     maxBitrate: maxBitrate === null ? null : Math.trunc(maxBitrate),
     streaming: parseStreaming(o.streaming),
     dsp: parseDsp(o.dsp),
+    perDeviceDsp: bool(o.perDeviceDsp, false),
+    deviceDsp: Object.fromEntries(
+      Object.entries(isObj(o.deviceDsp) ? o.deviceDsp : {}).map(([k, v]) => [k, parseDsp(v)]),
+    ),
+    playback: parsePlayback(o.playback),
+    downloads: parseDownloads(o.downloads),
     themeMode: enumOf(THEMES, o.themeMode, 'dark'),
     appearance: parseAppearance(o.appearance),
     behavior: parseBehavior(o.behavior),

@@ -26,6 +26,8 @@
     { id: 'playlists', label: 'Playlists' },
     { id: 'genres', label: 'Genres' },
     { id: 'favorites', label: 'Favorites' },
+    { id: 'smart', label: 'Smart' },
+    { id: 'stats', label: 'Stats' },
     { id: 'downloads', label: 'Downloads' },
   ];
   const TITLES: Partial<Record<RootRoute, string>> = {
@@ -38,6 +40,8 @@
     playlists: 'Playlists',
     genres: 'Genres',
     favorites: 'Favorites',
+    smart: 'Smart playlists',
+    stats: 'Your stats',
   };
 
   const current = $derived(router.current);
