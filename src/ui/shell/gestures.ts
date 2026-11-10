@@ -101,3 +101,45 @@ export function nextChipsHidden(prevTop: number, top: number, hidden: boolean): 
   if (d < -4) return false;
   return hidden;
 }
+
+/** Cover drag: 1:1 follow up to a third of the width, rubber-banded beyond. */
+export function coverDragOffset(dx: number, width: number): number {
+  if (width <= 0) return 0;
+  const a = Math.abs(dx);
+  const t = width / 3;
+  const eased = a <= t ? a : t + (a - t) * 0.35;
+  return Math.sign(dx) * Math.min(eased, width * 0.6);
+}
+
+/** Which gesture a cover drag is: horizontal skip, vertical close (touch/pen only), or undecided. */
+export function decideCoverDrag(dx: number, dy: number, pointerType: string): 'h' | 'v' | 'none' | 'cancel' {
+  const ax = Math.abs(dx);
+  if (ax > 8 && ax > Math.abs(dy)) return 'h';
+  if (dy > 8 && dy > ax * 1.2) return pointerType === 'mouse' ? 'cancel' : 'v';
+  if (dy < -8) return 'cancel';
+  return 'none';
+}
+
+/** Trackpad two-finger swipe: accumulates deltaX; one gesture = one skip (cooldown ends the inertia tail). */
+export class WheelSwipe {
+  private acc = 0;
+  private last = 0;
+  private until = 0;
+  constructor(
+    private readonly threshold = 90,
+    private readonly cooldownMs = 600,
+    private readonly idleMs = 150,
+  ) {}
+  /** Returns 'next' for a swipe left (positive deltaX), 'previous' for right, else null. */
+  add(deltaX: number, deltaY: number, now: number): 'next' | 'previous' | null {
+    if (now < this.until || Math.abs(deltaX) <= Math.abs(deltaY)) return null;
+    if (now - this.last > this.idleMs) this.acc = 0;
+    this.last = now;
+    this.acc += deltaX;
+    if (Math.abs(this.acc) < this.threshold) return null;
+    const r = this.acc > 0 ? 'next' : 'previous';
+    this.acc = 0;
+    this.until = now + this.cooldownMs;
+    return r;
+  }
+}

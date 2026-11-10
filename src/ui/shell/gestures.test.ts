@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  ScrollMemory, VelocityTracker, decideRelease, decideSkip, nextChipsHidden, pastThreshold,
+  ScrollMemory, VelocityTracker, WheelSwipe, coverDragOffset, decideCoverDrag, decideRelease, decideSkip, nextChipsHidden, pastThreshold,
   pullState, resist, sheetDragStyle, shouldStartPull,
 } from './gestures';
 
@@ -57,5 +57,28 @@ describe('gestures', () => {
     expect(nextChipsHidden(50, 40, true)).toBe(false);
     expect(nextChipsHidden(50, 52, true)).toBe(true);
     expect(nextChipsHidden(10, 0, true)).toBe(false);
+  });
+  it('coverDragOffset follows then resists', () => {
+    expect(coverDragOffset(50, 300)).toBe(50);
+    expect(coverDragOffset(-50, 300)).toBe(-50);
+    expect(coverDragOffset(400, 300)).toBeLessThanOrEqual(180);
+    expect(coverDragOffset(200, 300)).toBeLessThan(200);
+    expect(coverDragOffset(10, 0)).toBe(0);
+  });
+  it('decideCoverDrag', () => {
+    expect(decideCoverDrag(20, 2, 'mouse')).toBe('h');
+    expect(decideCoverDrag(2, 20, 'touch')).toBe('v');
+    expect(decideCoverDrag(2, 20, 'mouse')).toBe('cancel');
+    expect(decideCoverDrag(2, -20, 'touch')).toBe('cancel');
+    expect(decideCoverDrag(3, 3, 'touch')).toBe('none');
+  });
+  it('WheelSwipe: one gesture, one skip', () => {
+    const w = new WheelSwipe(90, 600, 150);
+    expect(w.add(40, 2, 0)).toBeNull();
+    expect(w.add(40, 2, 20)).toBeNull();
+    expect(w.add(40, 2, 40)).toBe('next');
+    expect(w.add(80, 0, 100)).toBeNull(); // inertia tail
+    expect(w.add(-120, 0, 1000)).toBe('previous');
+    expect(w.add(5, 50, 2000)).toBeNull(); // vertical scroll
   });
 });

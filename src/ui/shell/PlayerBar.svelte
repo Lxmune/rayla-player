@@ -52,7 +52,9 @@
   let enter = $state<'' | 'left' | 'right'>('');
 
   function onpointerdown(e: PointerEvent) {
-    if (!phone || !item || e.pointerType === 'mouse') return;
+    if (!item || e.pointerType === 'mouse') return;
+    // Wide layouts (touch screens): only the track info area swipes, sideways only.
+    if (!phone && !(e.target as Element | null)?.closest('.now')) return;
     start = { x: e.clientX, y: e.clientY, id: e.pointerId };
     mode = null;
     swiped = false;
@@ -67,6 +69,11 @@
     if (!mode) {
       if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
       mode = Math.abs(dx) > Math.abs(dy) ? 'h' : 'v';
+      if (!phone && mode === 'v') {
+        start = null;
+        mode = null;
+        return;
+      }
       try {
         bar?.setPointerCapture(start.id);
       } catch {
@@ -168,8 +175,8 @@
     class="now"
     class:enter-left={enter === 'left'}
     class:enter-right={enter === 'right'}
-    style:transform={phone && dragX !== 0 ? `translateX(${dragX}px)` : undefined}
-    style:opacity={phone && dragX !== 0 ? 1 - Math.min(0.7, Math.abs(dragX) / 300) : undefined}
+    style:transform={dragX !== 0 ? `translateX(${dragX}px)` : undefined}
+    style:opacity={dragX !== 0 ? 1 - Math.min(0.7, Math.abs(dragX) / 300) : undefined}
     {oncontextmenu}
     role="presentation"
   >
@@ -231,6 +238,7 @@
     transition: background var(--accent-transition);
   }
   .now {
+    touch-action: pan-y;
     will-change: auto;
     display: flex;
     align-items: center;

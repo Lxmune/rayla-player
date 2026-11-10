@@ -15,7 +15,11 @@
   import { deviceIcon, OutputDevices } from '../sheets/output-devices.svelte';
   import { onDestroy, onMount } from 'svelte';
   import { haptic } from '../common/haptics';
-  import { VelocityTracker, decideRelease, pastThreshold, sheetDragStyle } from '../shell/gestures';
+  import {
+    VelocityTracker, WheelSwipe, coverDragOffset, decideCoverDrag, decideRelease, decideSkip, pastThreshold,
+    sheetDragStyle,
+  } from '../shell/gestures';
+  import { prefersReducedMotion } from '../common/touch';
   import Lyrics from './Lyrics.svelte';
   import QueuePanel from './QueuePanel.svelte';
   import SleepTimerButton from './SleepTimerButton.svelte';
@@ -106,6 +110,95 @@
     }
   }
 
+  // Cover: drag sideways (touch, pen or mouse) to skip; down (touch/pen) still closes the sheet.
+  let cover: { x: number; y: number; id: number; mode: 'h' | 'v' | null } | null = null;
+  let coverSwiped = false;
+  let coverCrossed = false;
+  let coverX = $state(0);
+  let coverSettling = $state(false);
+  let coverEnter = $state<'' | 'left' | 'right'>('');
+  const coverVel = new VelocityTracker();
+  const wheel = new WheelSwipe();
+
+  function skip(dir: 'next' | 'previous') {
+    haptic('tick');
+    if (!prefersReducedMotion()) {
+      coverEnter = dir === 'next' ? 'left' : 'right';
+      setTimeout(() => (coverEnter = ''), 260);
+    }
+    void actions.guard(() => (dir === 'next' ? player.next() : player.previous()));
+  }
+  function coverDown(e: PointerEvent) {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    swipeStart(e);
+    cover = { x: e.clientX, y: e.clientY, id: e.pointerId, mode: null };
+    coverSwiped = false;
+    coverCrossed = false;
+    coverSettling = false;
+    coverVel.reset();
+  }
+  function coverMove(e: PointerEvent) {
+    const c = cover;
+    if (!c) return;
+    const dx = e.clientX - c.x;
+    if (!c.mode) {
+      const d = decideCoverDrag(dx, e.clientY - c.y, e.pointerType);
+      if (d === 'cancel') {
+        cover = null;
+        swipeCancel();
+        return;
+      }
+      if (d !== 'h') {
+        if (d === 'v') c.mode = 'v';
+        swipeMove(e);
+        return;
+      }
+      c.mode = 'h';
+      swipe = null;
+      try {
+        (e.currentTarget as HTMLElement).setPointerCapture(c.id);
+      } catch {
+        // best effort
+      }
+    }
+    if (c.mode === 'v') return swipeMove(e);
+    const w = (e.currentTarget as HTMLElement).clientWidth || 300;
+    coverX = coverDragOffset(dx, w);
+    coverVel.add(e.timeStamp, dx);
+    const past = pastThreshold(Math.abs(dx), w);
+    if (past !== coverCrossed) haptic('tick');
+    coverCrossed = past;
+  }
+  function coverUp(e: PointerEvent) {
+    const c = cover;
+    cover = null;
+    if (c?.mode !== 'h') return swipeEnd(e);
+    coverSwiped = true;
+    coverSettling = true;
+    coverX = 0;
+    const w = (e.currentTarget as HTMLElement).clientWidth || 300;
+    const verdict = decideSkip(e.clientX - c.x, Math.abs(coverVel.get()), w);
+    if (verdict !== 'cancel') skip(verdict);
+  }
+  function coverCancel() {
+    if (cover?.mode === 'h') {
+      coverSettling = true;
+      coverX = 0;
+    }
+    cover = null;
+    swipeCancel();
+  }
+  function coverClick(e: MouseEvent) {
+    if (!coverSwiped) return;
+    coverSwiped = false;
+    e.stopPropagation();
+    e.preventDefault();
+  }
+  function coverWheel(e: WheelEvent) {
+    const dir = wheel.add(e.deltaX, e.deltaY, e.timeStamp);
+    if (dir) skip(dir);
+  }
+
   function close() {
     ui.nowPlayingOpen = false;
   }
@@ -169,8 +262,12 @@
   <div class="layout">
     <div class="left">
       {#if item}
-        <div class="cover" class:paused role="presentation" onpointerdown={swipeStart}
-          onpointermove={swipeMove} onpointerup={swipeEnd} onpointercancel={swipeCancel}>
+        <div class="cover" class:paused class:settling={coverSettling} class:enter-left={coverEnter === 'left'}
+          class:enter-right={coverEnter === 'right'} role="presentation" onpointerdown={coverDown}
+          onpointermove={coverMove} onpointerup={coverUp} onpointercancel={coverCancel}
+          onclickcapture={coverClick} onwheel={coverWheel} ondragstart={(e) => e.preventDefault()}
+          style:translate={coverX !== 0 ? `${coverX}px 0` : undefined}
+          style:opacity={coverX !== 0 ? 1 - Math.min(0.6, Math.abs(coverX) / 400) : undefined}>
           <Artwork {item} size={640} fill />
         </div>
         <div class="meta">
@@ -394,6 +491,31 @@
   .top {
     touch-action: pan-x;
     user-select: none;
+  }
+  .cover {
+    touch-action: none;
+    cursor: grab;
+  }
+  .cover.settling {
+    transition:
+      translate var(--duration) var(--ease-out),
+      opacity var(--duration) var(--ease-out),
+      transform var(--duration-slow) var(--ease-out);
+  }
+  .cover.enter-left {
+    animation: cover-in-left 240ms var(--ease-out);
+  }
+  .cover.enter-right {
+    animation: cover-in-right 240ms var(--ease-out);
+  }
+  @keyframes cover-in-left {
+    from { translate: 48px 0; opacity: 0; }
+  }
+  @keyframes cover-in-right {
+    from { translate: -48px 0; opacity: 0; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .cover.enter-left, .cover.enter-right { animation: none; }
   }
   .right {
     display: flex;

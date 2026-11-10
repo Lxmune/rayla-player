@@ -93,6 +93,20 @@ describe('NowPlaying', () => {
   });
 });
 
+describe('NowPlaying cover swipe', () => {
+  it('a horizontal trackpad swipe over the cover skips once', async () => {
+    const { app } = await signedIn();
+    await app.core.player.playQueue([track('a'), track('b'), track('c')]);
+    const { container } = render(NowPlaying, { context: withContext(app).context });
+    const cover = container.querySelector('.cover') as HTMLElement;
+    expect(cover).toBeTruthy();
+    for (let i = 0; i < 5; i++) await fireEvent.wheel(cover, { deltaX: 40, deltaY: 0 });
+    await waitFor(() => expect(app.core.player.current?.id).toBe('b'));
+    await flush();
+    expect(app.core.player.current?.id).toBe('b');
+  });
+});
+
 describe('SeekBar', () => {
   it('toggles elapsed/remaining on the end time and remembers it', async () => {
     const { default: SeekBar } = await import('../common/SeekBar.svelte');
