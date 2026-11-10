@@ -142,6 +142,15 @@
     .info {
       display: contents;
     }
+    /* `display: contents` drops .info's stacking (z-index), so lift its
+       children above the backdrop themselves; otherwise the fade covers them. */
+    .kind,
+    h1,
+    .meta,
+    .actions {
+      position: relative;
+      z-index: 1;
+    }
     .art {
       grid-column: 1;
       grid-row: 1 / span 2;
