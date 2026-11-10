@@ -117,10 +117,32 @@ export function createApp(core: Core, deps: IntegrationDeps): RaylaApp {
               : null;
           },
           onError: (e) => core.errors.report(e),
+          // Notification / lock-screen heart and "not for me".
+          isLiked: (item) => core.favorites.isFavorite(item),
+          onLike: () => {
+            const it = core.player.current;
+            if (it) void core.favorites.toggle(it).catch((e) => core.errors.report(e));
+          },
+          onDislike: () => {
+            const it = core.player.current;
+            if (!it) return;
+            skips.dislike(it);
+            void core.player.next().catch((e) => core.errors.report(e));
+          },
         });
         void session.start();
+        // Re-push when the current track's favourite state changes (from the UI or the
+        // notification), so the notification heart stays in sync.
+        const stopLikeWatch = $effect.root(() => {
+          $effect(() => {
+            const it = core.player.current;
+            if (it) core.favorites.isFavorite(it);
+            session.observe();
+          });
+        });
         unsubscribe.push(
           () => session.dispose(),
+          stopLikeWatch,
           core.sessions.onActiveChange(() => session.observe()),
         );
       }
