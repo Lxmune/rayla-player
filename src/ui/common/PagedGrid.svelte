@@ -176,6 +176,8 @@
     padding: 0;
   }
   .row {
+    content-visibility: auto;
+    contain-intrinsic-size: auto var(--row-height);
     display: flex;
     align-items: center;
     gap: var(--space-2);
@@ -196,6 +198,7 @@
   }
   .row:active {
     background: var(--active);
+    transition: background 0ms;
   }
   .open {
     flex: 1;

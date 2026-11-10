@@ -99,6 +99,7 @@
     min-width: 0;
     padding: var(--space-3);
     border-radius: var(--radius-lg);
+
     transition:
       background var(--transition),
       transform var(--duration) var(--ease-out);
@@ -227,7 +228,11 @@
     border-radius: 50%;
     background: var(--glass);
     color: var(--text);
-    backdrop-filter: blur(8px);
+  }
+  @media (hover: hover) {
+    .more {
+      backdrop-filter: blur(8px);
+    }
   }
   .more:hover {
     background: var(--surface-3);
@@ -250,6 +255,8 @@
   }
   @media (hover: none) {
     .card {
+      content-visibility: auto;
+      contain-intrinsic-size: auto 240px;
       -webkit-user-select: none;
       user-select: none;
       -webkit-touch-callout: none;
@@ -260,15 +267,21 @@
       transform: none;
     }
     /* Quick in, slower out: the whole card presses toward the finger. */
+    .cover {
+      box-shadow: none;
+    }
+    .play {
+      box-shadow: none;
+    }
     .card:active {
-      transform: scale(0.97);
+      transform: scale(var(--press-scale));
       background: var(--surface);
       transition:
-        background 100ms linear,
-        transform 100ms var(--ease-out);
+        background 0ms,
+        transform var(--press-in) var(--ease-out);
     }
     .play:active {
-      transform: scale(0.92);
+      transform: scale(var(--press-scale-small));
     }
   }
   @media (prefers-reduced-motion: reduce) {

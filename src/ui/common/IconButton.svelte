@@ -70,9 +70,14 @@
     }
   }
   .icon-btn:active:not(:disabled) {
-    transform: scale(0.92);
+    transform: scale(var(--press-scale-small));
+    transition-duration: 0ms;
   }
   @media (hover: none) {
+    .icon-btn:not(.primary) {
+      width: 40px;
+      height: 40px;
+    }
     .icon-btn:active:not(:disabled) {
       color: var(--text);
       background: var(--active);
@@ -86,12 +91,10 @@
     height: 48px;
     background: var(--accent);
     color: var(--accent-contrast);
-    box-shadow: 0 4px 18px color-mix(in srgb, var(--accent) 45%, transparent);
     transition:
       background var(--accent-transition),
       color var(--accent-transition),
-      transform var(--duration-fast) var(--ease-out),
-      box-shadow var(--accent-transition);
+      transform var(--duration-fast) var(--ease-out);
   }
   @media (hover: hover) {
     .icon-btn.primary:hover:not(:disabled) {

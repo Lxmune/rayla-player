@@ -63,6 +63,11 @@
   --duration-slow: 420ms;
   --transition: var(--duration) var(--ease-out);
   --accent-transition: 700ms var(--ease-in-out);
+  /* Touch feedback: instant in, eased out. */
+  --press-in: 70ms;
+  --press-out: 200ms;
+  --press-scale: 0.97;
+  --press-scale-small: 0.92;
 
   /* Layers */
   --z-sticky: 10;
@@ -198,6 +203,40 @@ button {
   -webkit-tap-highlight-color: transparent;
 }
 
+/* No double-tap-zoom delay, no grey tap flash on anything tappable. */
+a,
+button,
+input,
+select,
+textarea,
+label,
+summary,
+[role='button'],
+[role='menuitem'],
+[role='tab'],
+[role='switch'],
+[role='slider'],
+[role='option'] {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Long-press progress: the pressed item slowly settles in until the menu opens. */
+html [data-pressing] {
+  transform: scale(0.955) !important;
+  transition: transform 330ms linear !important;
+}
+
+/* Touch devices: no scrollbars, no scroll chaining out of scrollers. */
+@media (hover: none) {
+  * {
+    scrollbar-width: none;
+  }
+  ::-webkit-scrollbar {
+    display: none;
+  }
+}
+
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
@@ -315,6 +354,10 @@ button {
   50% {
     transform: scaleY(1);
   }
+}
+
+:root[data-motion='reduced'] [data-pressing] {
+  transform: none !important;
 }
 
 :root[data-motion='reduced'] *,

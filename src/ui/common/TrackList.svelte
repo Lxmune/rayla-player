@@ -107,6 +107,10 @@
 </div>
 
 <style>
+  .list > :global(li:not(.disc)) {
+    content-visibility: auto;
+    contain-intrinsic-size: auto var(--row-height);
+  }
   .list {
     list-style: none;
     margin: 0;

@@ -127,6 +127,7 @@
     max-width: 320px;
     max-height: calc(100vh - 16px);
     overflow-y: auto;
+    overscroll-behavior: contain;
     padding: var(--space-1);
     background: var(--glass);
     backdrop-filter: blur(24px) saturate(1.6);
@@ -137,12 +138,19 @@
     animation: scale-in var(--duration-fast) var(--ease-out);
     transform-origin: top left;
   }
+  @media (hover: none) {
+    .menu {
+      background: var(--surface-2);
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
+    }
+  }
   .scrim {
     position: fixed;
     inset: 0;
     z-index: var(--z-menu);
     background: var(--scrim);
-    animation: tmenu-fade 200ms ease-out;
+    animation: tmenu-fade 160ms ease-out;
   }
   .menu.sheet {
     inset: auto 0 0 0;
@@ -155,7 +163,8 @@
     background: var(--surface);
     overscroll-behavior: contain;
     transform-origin: bottom center;
-    animation: tmenu-up 280ms var(--ease-out);
+    animation: tmenu-up 240ms var(--ease-out);
+    will-change: transform;
   }
   .grab {
     position: sticky;
@@ -224,6 +233,7 @@
   }
   button:active:not(:disabled) {
     background: var(--active);
+    transition: none;
   }
   @media (prefers-reduced-motion: reduce) {
     .menu.sheet,

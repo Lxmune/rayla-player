@@ -393,7 +393,7 @@
     }
     .row:active {
       background: var(--active);
-      transition: background 100ms linear;
+      transition: background 0ms;
     }
   }
   @media (max-width: 900px) {

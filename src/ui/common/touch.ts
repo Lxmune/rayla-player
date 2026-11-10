@@ -6,6 +6,8 @@ import { haptic } from './haptics';
 
 export const LONG_PRESS_MS = 450;
 export const LONG_PRESS_SLOP = 10;
+/** Delay before the "pressing" visual starts, so plain taps never flash it. */
+export const PRESSING_DELAY_MS = 120;
 export const SWIPE_DECIDE_PX = 8;
 export const SWIPE_COMMIT_RATIO = 0.3;
 /** A native `contextmenu` this soon after a touch is the WebView's own long-press. */
@@ -79,14 +81,18 @@ export interface LongPressOptions {
 export function longPress(node: HTMLElement, initial: LongPressOptions) {
   let opts = initial;
   let timer: ReturnType<typeof setTimeout> | null = null;
+  let pressTimer: ReturnType<typeof setTimeout> | null = null;
   let start: { x: number; y: number; id: number } | null = null;
   let firedAt = 0;
   let lastTouchAt = 0;
 
   const clear = () => {
     if (timer) clearTimeout(timer);
+    if (pressTimer) clearTimeout(pressTimer);
     timer = null;
+    pressTimer = null;
     start = null;
+    delete node.dataset.pressing;
   };
   const fire = (x: number, y: number) => {
     clear();
@@ -104,6 +110,9 @@ export function longPress(node: HTMLElement, initial: LongPressOptions) {
     const s = { x: e.clientX, y: e.clientY, id: e.pointerId };
     start = s;
     timer = setTimeout(() => fire(s.x, s.y), LONG_PRESS_MS);
+    pressTimer = setTimeout(() => {
+      node.dataset.pressing = '';
+    }, PRESSING_DELAY_MS);
   }
   function move(e: PointerEvent) {
     if (!start || e.pointerId !== start.id) return;

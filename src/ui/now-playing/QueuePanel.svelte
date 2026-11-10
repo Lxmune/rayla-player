@@ -10,6 +10,8 @@
   import { formatTime } from '../common/format';
   import { useItemMenu } from '../common/item-menu';
   import { getUi } from '../shell/router.svelte';
+  import { haptic } from '../common/haptics';
+  import { edgeScroll, shiftFor, targetIndex } from '../common/reorder';
 
   const app = getApp();
   const ui = getUi();
@@ -47,6 +49,90 @@
     e.preventDefault();
     const to = i + (e.key === 'ArrowUp' ? -1 : 1);
     if (to >= 0 && to < player.queue.length) move(i, to);
+  }
+
+  /** Touch / pen reorder: pointer-driven, transform-only while dragging. */
+  const touchUi = typeof matchMedia === 'function' && matchMedia('(hover: none)').matches;
+
+  function gripDown(e: PointerEvent, qi: number) {
+    if (e.pointerType === 'mouse' || !list) return;
+    const grip = e.currentTarget as HTMLElement;
+    const rows = [...list.querySelectorAll<HTMLElement>('li.row')];
+    const from = rows.findIndex((r) => Number(r.dataset.i) === qi);
+    const dragged = rows[from];
+    if (!dragged) return;
+    e.preventDefault();
+    let scroller: HTMLElement = list;
+    for (let n: HTMLElement | null = list; n; n = n.parentElement) {
+      const oy = getComputedStyle(n).overflowY;
+      if (oy === 'auto' || oy === 'scroll') {
+        scroller = n;
+        break;
+      }
+    }
+    const sTop0 = scroller.scrollTop;
+    const base = scroller.getBoundingClientRect().top - sTop0;
+    const tops = rows.map((r) => r.getBoundingClientRect().top - base);
+    const heights = rows.map((r) => r.offsetHeight);
+    const size = heights[from] ?? 0;
+    const startY = e.clientY;
+    let y = startY;
+    let to = from;
+    let raf = 0;
+    try {
+      grip.setPointerCapture(e.pointerId);
+    } catch {
+      // capture is optional
+    }
+    haptic('press');
+    dragged.dataset.lifted = '';
+    for (const r of rows) r.dataset.shifting = '';
+
+    const apply = () => {
+      const dy = y - startY + (scroller.scrollTop - sTop0);
+      dragged.style.transform = `translateY(${dy}px) scale(1.02)`;
+      const center = (tops[from] ?? 0) + (heights[from] ?? 0) / 2 + dy;
+      const next = targetIndex(center, tops, heights);
+      if (next !== to && next >= 0) {
+        to = next;
+        haptic('tick');
+        rows.forEach((r, j) => {
+          if (j !== from) r.style.transform = `translateY(${shiftFor(j, from, to, size)}px)`;
+        });
+      }
+    };
+    const loop = () => {
+      const r = scroller.getBoundingClientRect();
+      const v = edgeScroll(y, r.top, r.bottom);
+      if (v !== 0) {
+        scroller.scrollTop += v;
+        apply();
+      }
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+
+    const onmove = (ev: PointerEvent) => {
+      y = ev.clientY;
+      apply();
+    };
+    const finish = (ev: PointerEvent) => {
+      cancelAnimationFrame(raf);
+      grip.removeEventListener('pointermove', onmove);
+      grip.removeEventListener('pointerup', finish);
+      grip.removeEventListener('pointercancel', finish);
+      for (const r of rows) {
+        delete r.dataset.shifting;
+        r.style.transform = '';
+      }
+      delete dragged.dataset.lifted;
+      if (ev.type === 'pointercancel' || to === from) return;
+      const toQi = Number(rows[to]?.dataset.i);
+      if (!Number.isNaN(toQi)) move(qi, toQi);
+    };
+    grip.addEventListener('pointermove', onmove);
+    grip.addEventListener('pointerup', finish);
+    grip.addEventListener('pointercancel', finish);
   }
 
   function ondragover(e: DragEvent, i: number) {
@@ -94,7 +180,8 @@
       class:drop-before={dropSlot === i && dragFrom !== null}
       class:drop-after={dropSlot === i + 1 && i === player.queue.length - 1 && dragFrom !== null}
       data-uid={entry.uid}
-      draggable="true"
+      data-i={i}
+      draggable={touchUi ? undefined : 'true'}
       ondragstart={(e) => {
         dragFrom = i;
         if (e.dataTransfer) {
@@ -108,7 +195,7 @@
       oncontextmenu={(e) => ui.openMenu(e, menuFor(entry.item))}
       onkeydown={(e) => onrowkeydown(e, i)}
     >
-      <span class="grip" aria-hidden="true" title="Drag to reorder">⋮⋮</span>
+      <span class="grip" aria-hidden="true" title="Drag to reorder" onpointerdown={(e) => gripDown(e, i)}>⋮⋮</span>
       <button
         type="button"
         class="jump"
@@ -300,6 +387,20 @@
     align-items: center;
     border-radius: var(--radius-md);
     transition: background var(--duration-fast) var(--ease-out);
+    content-visibility: auto;
+    contain-intrinsic-size: auto 60px;
+  }
+  .row:global([data-shifting]) {
+    transition: transform 160ms var(--ease-out);
+    content-visibility: visible;
+  }
+  .row:global([data-lifted]) {
+    z-index: 2;
+    background: var(--surface-2);
+    transition: none;
+  }
+  .row:active {
+    background: var(--active);
   }
   .row:hover,
   .row:focus-within {
@@ -334,6 +435,27 @@
     cursor: grab;
     opacity: 0;
     user-select: none;
+    touch-action: none;
+  }
+  @media (hover: none) {
+    .grip {
+      width: 28px;
+      margin-left: 0;
+      padding: var(--space-3) var(--space-2);
+      opacity: 0.7;
+      text-align: center;
+    }
+    .row {
+      -webkit-touch-callout: none;
+    }
+    .actions {
+      max-width: 120px;
+      opacity: 1;
+      overflow: visible;
+    }
+    .actions :global(.icon-btn:nth-child(-n + 2)) {
+      display: none;
+    }
   }
   .row:hover .grip,
   .row:focus-within .grip {

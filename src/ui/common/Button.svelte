@@ -54,7 +54,8 @@
     }
   }
   .btn:active:not(:disabled) {
-    transform: scale(0.97);
+    transform: scale(var(--press-scale));
+    transition-duration: 0ms;
   }
   .btn.primary {
     background: var(--accent);

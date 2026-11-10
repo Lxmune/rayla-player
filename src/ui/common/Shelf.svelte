@@ -153,6 +153,7 @@
     overflow-x: auto;
     scroll-snap-type: x proximity;
     scrollbar-width: none;
+    overscroll-behavior-x: contain;
     margin-inline: calc(var(--space-2) * -1);
     padding-inline: var(--space-2);
     padding-bottom: var(--space-2);
@@ -184,7 +185,7 @@
   }
   @media (hover: none), (max-width: 640px) {
     .row {
-      scroll-snap-type: x mandatory;
+      scroll-snap-type: x proximity;
       scroll-padding-inline: var(--space-2);
       -webkit-overflow-scrolling: touch;
       overscroll-behavior-x: contain;

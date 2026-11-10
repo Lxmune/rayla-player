@@ -115,6 +115,7 @@
     padding: var(--space-4) var(--space-5) var(--space-5);
     overflow-y: auto;
     overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
   }
   /* Phone: bottom sheet. Only the handle / header drags, so the body keeps scrolling. */
   @media (max-width: 640px) {
@@ -154,6 +155,22 @@
     }
     .body {
       padding-bottom: calc(var(--space-5) + env(safe-area-inset-bottom, 0px));
+    }
+  }
+  @media (hover: none), (max-width: 640px) {
+    .scrim {
+      backdrop-filter: none;
+    }
+    header {
+      background: var(--surface);
+      backdrop-filter: none;
+    }
+    .grab {
+      background: var(--surface);
+    }
+    .sheet {
+      will-change: transform;
+      box-shadow: none;
     }
   }
   @keyframes tsheet-up {
