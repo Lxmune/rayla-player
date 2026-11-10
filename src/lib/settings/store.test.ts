@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { memoryKv } from '../platform';
 import { EngineErrors } from '../player/errors.svelte';
 import { FakeEngine } from '../test-support';
-import { DEFAULT_DISCORD, DEFAULT_DSP, DEFAULT_SETTINGS } from './types';
+import { DEFAULT_APPEARANCE, DEFAULT_BEHAVIOR, DEFAULT_DISCORD, DEFAULT_DSP, DEFAULT_SETTINGS } from './types';
 import { SETTINGS_KEY, SettingsStore, loadSettings, parseSettings } from './store.svelte';
 
 function make(kv = memoryKv()) {
@@ -157,5 +157,23 @@ describe('SettingsStore', () => {
     off();
     await store.setMaxBitrate(null);
     expect(seen).toEqual([[128000, null]]);
+  });
+  it('parses appearance and behavior defensively and persists updates', async () => {
+    const parsed = loadSettings(
+      JSON.stringify({
+        appearance: { accentColor: 'red', density: 'tiny', accentFromCover: false },
+        behavior: { startScreen: 'nowhere', resumePlayback: false },
+      }),
+    );
+    expect(parsed.appearance).toEqual({ ...DEFAULT_APPEARANCE, accentFromCover: false });
+    expect(parsed.behavior).toEqual({ ...DEFAULT_BEHAVIOR, resumePlayback: false });
+
+    const { store, kv } = make();
+    await store.updateAppearance({ accentColor: '#ABCDEF', density: 'compact' });
+    await store.updateBehavior({ startScreen: 'albums' });
+    const saved = loadSettings(kv.get(SETTINGS_KEY));
+    expect(saved.appearance.accentColor).toBe('#abcdef');
+    expect(saved.appearance.density).toBe('compact');
+    expect(saved.behavior.startScreen).toBe('albums');
   });
 });

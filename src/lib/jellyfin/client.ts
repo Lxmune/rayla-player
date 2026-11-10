@@ -64,10 +64,20 @@ export interface AlbumsQuery {
   artistId?: string | null;
   genreId?: string | null;
   favoritesOnly?: boolean;
+  /** Only items the user has played (use with sortBy 'DatePlayed' / 'PlayCount'). */
+  playedOnly?: boolean;
   sortBy?: string;
   descending?: boolean;
   startIndex?: number;
   limit?: number;
+}
+
+/** Tracks across the library (all songs, favorites, recently / most played, genre, artist). */
+export type TracksQuery = AlbumsQuery;
+
+function filters(opts: AlbumsQuery): string | null {
+  const f = [opts.favoritesOnly ? 'IsFavorite' : null, opts.playedOnly ? 'IsPlayed' : null].filter(Boolean);
+  return f.length > 0 ? f.join(',') : null;
 }
 
 /** Extra fields remote controllers display (see the report* methods). */
@@ -226,13 +236,34 @@ export class JellyfinClient {
       Recursive: true,
       AlbumArtistIds: opts.artistId,
       GenreIds: opts.genreId,
-      Filters: opts.favoritesOnly ? 'IsFavorite' : null,
+      Filters: filters(opts),
       SortBy: opts.sortBy ?? 'SortName',
       SortOrder: opts.descending ? 'Descending' : 'Ascending',
       Fields: 'DateCreated,ChildCount',
       StartIndex: opts.startIndex ?? 0,
       Limit: opts.limit ?? 100,
     });
+  }
+
+  /** Tracks, optionally narrowed (artist matches any credited artist). */
+  tracks(opts: TracksQuery = {}): Promise<ItemsPage> {
+    return this.items('/Items', {
+      IncludeItemTypes: 'Audio',
+      Recursive: true,
+      ArtistIds: opts.artistId,
+      GenreIds: opts.genreId,
+      Filters: filters(opts),
+      SortBy: opts.sortBy ?? 'SortName',
+      SortOrder: opts.descending ? 'Descending' : 'Ascending',
+      Fields: ITEM_FIELDS,
+      StartIndex: opts.startIndex ?? 0,
+      Limit: opts.limit ?? 100,
+    });
+  }
+
+  /** Items similar to an artist or album (same type as the seed). */
+  similar(itemId: string, limit = 12): Promise<ItemsPage> {
+    return this.items(`/Items/${itemId}/Similar`, { Limit: limit, Fields: 'DateCreated,ChildCount' });
   }
 
   recentlyAddedAlbums(opts: { startIndex?: number; limit?: number } = {}): Promise<ItemsPage> {
@@ -308,6 +339,33 @@ export class JellyfinClient {
     });
     const of = (type: string) => page.items.filter((i) => i.type === type);
     return { artists: of('MusicArtist'), albums: of('MusicAlbum'), tracks: of('Audio') };
+  }
+
+  // -------------------------------------------------------------- playlists
+
+  /** Creates an audio playlist with `itemIds`; resolves to its id. */
+  async createPlaylist(name: string, itemIds: string[] = []): Promise<string> {
+    const json = await this.request('POST', '/Playlists', {
+      body: { Name: name, Ids: itemIds, UserId: this.userId, MediaType: 'Audio' },
+    });
+    const id = typeof json === 'object' && json !== null ? (json as { Id?: unknown }).Id : null;
+    if (typeof id !== 'string' || id === '') throw new JellyfinError('http', null, 'Playlist was not created.');
+    return id;
+  }
+
+  async addToPlaylist(playlistId: string, itemIds: string[]): Promise<void> {
+    if (itemIds.length === 0) return;
+    await this.request('POST', `/Playlists/${playlistId}/Items`, {
+      query: { Ids: itemIds.join(','), UserId: this.userId },
+    });
+  }
+
+  /** Removes entries by their `playlistItemId`. */
+  async removeFromPlaylist(playlistId: string, entryIds: string[]): Promise<void> {
+    if (entryIds.length === 0) return;
+    await this.request('DELETE', `/Playlists/${playlistId}/Items`, {
+      query: { EntryIds: entryIds.join(',') },
+    });
   }
 
   async setFavorite(itemId: string, favorite: boolean): Promise<void> {

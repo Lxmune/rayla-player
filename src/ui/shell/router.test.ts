@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { parseBaseItem } from '../../lib/jellyfin/models';
-import { Router } from './router.svelte';
+import { Router, TOAST_MS, UiState } from './router.svelte';
 
 const album = parseBaseItem({ Id: 'al1', Name: 'Album', Type: 'MusicAlbum' });
 const artist = parseBaseItem({ Id: 'ar1', Name: 'Artist', Type: 'MusicArtist' });
@@ -18,7 +18,7 @@ describe('Router', () => {
     r.open(artist);
     r.open(album);
     expect(r.current.name).toBe('album');
-    expect(r.section).toBe('albums');
+    expect(r.section).toBe('artists');
     r.back();
     expect(r.current).toEqual({ name: 'artist', item: artist });
     expect(r.section).toBe('artists');
@@ -37,9 +37,47 @@ describe('Router', () => {
     expect(r.section).toBe('settings');
   });
 
+  it('forward re-opens what back left and is cleared by new navigation', () => {
+    const r = new Router('albums');
+    expect(r.section).toBe('albums');
+    r.open(album);
+    r.back();
+    expect(r.canForward).toBe(true);
+    r.forward();
+    expect(r.current).toEqual({ name: 'album', item: album });
+    r.back();
+    r.open(artist);
+    expect(r.canForward).toBe(false);
+    r.open(parseBaseItem({ Id: 'g', Name: 'Jazz', Type: 'MusicGenre' }));
+    expect(r.current.name).toBe('genre');
+  });
+
   it('ignores items without a screen', () => {
     const r = new Router();
     r.open(parseBaseItem({ Id: 't', Name: 'T', Type: 'Audio' }));
     expect(r.stack).toHaveLength(1);
+  });
+});
+
+describe('UiState', () => {
+  it('toasts keep the last three and auto-dismiss', () => {
+    vi.useFakeTimers();
+    try {
+      const ui = new UiState();
+      for (const m of ['a', 'b', 'c', 'd']) ui.toast(m);
+      expect(ui.toasts.map((t) => t.message)).toEqual(['b', 'c', 'd']);
+      vi.advanceTimersByTime(TOAST_MS);
+      expect(ui.toasts).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('opens a menu at coordinates and closes it', () => {
+    const ui = new UiState();
+    ui.openMenu({ x: 10, y: 20 }, ['separator']);
+    expect(ui.menu).toEqual({ x: 10, y: 20, entries: ['separator'] });
+    ui.closeMenu();
+    expect(ui.menu).toBeNull();
   });
 });

@@ -12,6 +12,14 @@
   import PlaylistScreen from '../browse/PlaylistScreen.svelte';
   import PlaylistsScreen from '../browse/PlaylistsScreen.svelte';
   import SearchScreen from '../browse/SearchScreen.svelte';
+  import FavoritesScreen from '../browse/FavoritesScreen.svelte';
+  import GenreScreen from '../browse/GenreScreen.svelte';
+  import GenresScreen from '../browse/GenresScreen.svelte';
+  import SongsScreen from '../browse/SongsScreen.svelte';
+  import AddToPlaylistSheet from '../sheets/AddToPlaylistSheet.svelte';
+  import ShortcutsSheet from '../sheets/ShortcutsSheet.svelte';
+  import ContextMenu from '../common/ContextMenu.svelte';
+  import Toasts from '../common/Toasts.svelte';
   import AccountSheet from '../login/AccountSheet.svelte';
   import IconButton from '../common/IconButton.svelte';
   import Sheet from '../common/Sheet.svelte';
@@ -26,20 +34,22 @@
     provideUi,
   } from './router.svelte';
 
-  const router = provideRouter(new Router());
+  const app = getApp();
+  const router = provideRouter(new Router(app.core.settings.current.behavior.startScreen));
   const ui = provideUi(new UiState());
 
-  const app = getApp();
   const actions = useActions();
   const route = $derived(router.current);
   const sheetTitle = $derived(
-    ui.sheet?.kind === 'signal' ? 'Signal path' : ui.sheet?.kind === 'tech' ? 'Track info' : 'Servers',
+    ({ signal: 'Signal path', tech: 'Track info', accounts: 'Servers', shortcuts: 'Keyboard shortcuts', addToPlaylist: 'Add to playlist' } as const)[
+      ui.sheet?.kind ?? 'signal'
+    ],
   );
 
   // A new profile starts on Home with a clean overlay state.
   $effect(() => {
     return app.core.sessions.onActiveChange(() => {
-      router.go('home');
+      router.go(app.core.settings.current.behavior.startScreen);
       ui.nowPlayingOpen = false;
       ui.sheet = null;
     });
@@ -91,6 +101,14 @@
           <AlbumScreen item={route.item} />
         {:else if route.name === 'playlist'}
           <PlaylistScreen item={route.item} />
+        {:else if route.name === 'favorites'}
+          <FavoritesScreen />
+        {:else if route.name === 'songs'}
+          <SongsScreen />
+        {:else if route.name === 'genres'}
+          <GenresScreen />
+        {:else if route.name === 'genre'}
+          <GenreScreen item={route.item} />
         {/if}
       {/key}
     </main>
@@ -107,11 +125,18 @@
         <SignalPathSheet />
       {:else if ui.sheet.kind === 'tech'}
         <TechInfoSheet item={ui.sheet.item} />
+      {:else if ui.sheet.kind === 'shortcuts'}
+        <ShortcutsSheet />
+      {:else if ui.sheet.kind === 'addToPlaylist'}
+        <AddToPlaylistSheet tracks={ui.sheet.tracks} onclose={() => (ui.sheet = null)} />
       {:else}
         <AccountSheet onclose={() => (ui.sheet = null)} />
       {/if}
     </Sheet>
   {/if}
+
+  <ContextMenu />
+  <Toasts />
 </div>
 
 <style>

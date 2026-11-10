@@ -83,6 +83,8 @@ export interface BaseItem {
   albumPrimaryImageTag: string | null;
   /** ISO-8601 string when it parsed as a date. */
   dateCreated: string | null;
+  /** Entry id inside a playlist (only on playlist items); needed to remove it. */
+  playlistItemId: string | null;
   mediaSources: MediaSource[];
 }
 
@@ -174,6 +176,7 @@ export function parseBaseItem(json: unknown): BaseItem {
     primaryImageTag: str(imageTags?.Primary),
     albumPrimaryImageTag: str(j.AlbumPrimaryImageTag),
     dateCreated: created !== null && !Number.isNaN(Date.parse(created)) ? created : null,
+    playlistItemId: str(j.PlaylistItemId),
     mediaSources: list(j.MediaSources, parseMediaSource),
   };
 }
@@ -228,7 +231,11 @@ export function baseItemToJson(i: BaseItem): Json {
     }),
     UserData: { IsFavorite: i.isFavorite },
     ImageTags: compact({ Primary: i.primaryImageTag }),
-    ...compact({ AlbumPrimaryImageTag: i.albumPrimaryImageTag, DateCreated: i.dateCreated }),
+    ...compact({
+      AlbumPrimaryImageTag: i.albumPrimaryImageTag,
+      DateCreated: i.dateCreated,
+      PlaylistItemId: i.playlistItemId,
+    }),
     MediaSources: i.mediaSources.map(mediaSourceToJson),
   };
 }

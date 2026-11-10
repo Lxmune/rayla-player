@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { FakeHttp, FakeStatus, fakeClient, track, trackJson } from '../test-support';
 import { JellyfinClient, JellyfinError, describeError } from './client';
+import { baseItemToJson, parseBaseItem } from './models';
 
 describe('JellyfinClient', () => {
   it('authenticate sends the MediaBrowser header and parses the result', async () => {
@@ -297,6 +298,71 @@ describe('JellyfinClient', () => {
       expect(describeError(net)).toBe('Could not reach the server.');
       expect(describeError(new JellyfinError('timeout', null, 't'))).toBe('Connection timed out.');
       expect(describeError(new Error('plain'))).toBe('plain');
+    });
+  });
+  describe('library queries and playlist editing', () => {
+    it('tracks() combines filters and passes artist / genre / sort', async () => {
+      const http = new FakeHttp({ 'GET /Items': { Items: [], TotalRecordCount: 0 } });
+      await fakeClient(http).tracks({
+        artistId: 'ar1',
+        genreId: 'g1',
+        favoritesOnly: true,
+        playedOnly: true,
+        sortBy: 'PlayCount',
+        descending: true,
+        limit: 10,
+      });
+      const q = http.requests[0]?.query ?? {};
+      expect(q['IncludeItemTypes']).toBe('Audio');
+      expect(q['ArtistIds']).toBe('ar1');
+      expect(q['GenreIds']).toBe('g1');
+      expect(q['Filters']).toBe('IsFavorite,IsPlayed');
+      expect(q['SortBy']).toBe('PlayCount');
+      expect(q['SortOrder']).toBe('Descending');
+      expect(q['Limit']).toBe('10');
+    });
+
+    it('albums() omits Filters when none is set', async () => {
+      const http = new FakeHttp({ 'GET /Items': { Items: [], TotalRecordCount: 0 } });
+      await fakeClient(http).albums({ playedOnly: true });
+      expect(http.requests[0]?.query['Filters']).toBe('IsPlayed');
+      await fakeClient(http).albums();
+      expect(http.requests[1]?.query['Filters']).toBeUndefined();
+    });
+
+    it('similar() hits the Similar endpoint', async () => {
+      const http = new FakeHttp({ 'GET /Items/ar1/Similar': { Items: [{ Id: 'ar2', Name: 'B', Type: 'MusicArtist' }] } });
+      const page = await fakeClient(http).similar('ar1', 5);
+      expect(page.items.map((i) => i.id)).toEqual(['ar2']);
+      expect(http.requests[0]?.query['Limit']).toBe('5');
+    });
+
+    it('creates playlists, adds and removes entries', async () => {
+      const http = new FakeHttp({
+        'POST /Playlists': { Id: 'pl9' },
+        'POST /Playlists/pl9/Items': '',
+        'DELETE /Playlists/pl9/Items': '',
+      });
+      const client = fakeClient(http);
+      expect(await client.createPlaylist('Mine', ['t1'])).toBe('pl9');
+      expect(http.requests[0]?.body).toEqual({ Name: 'Mine', Ids: ['t1'], UserId: 'u1', MediaType: 'Audio' });
+      await client.addToPlaylist('pl9', ['t2', 't3']);
+      expect(http.requests[1]?.query).toEqual({ Ids: 't2,t3', UserId: 'u1' });
+      await client.removeFromPlaylist('pl9', ['e1']);
+      expect(http.requests[2]?.query).toEqual({ EntryIds: 'e1' });
+      await client.addToPlaylist('pl9', []);
+      expect(http.requests).toHaveLength(3);
+    });
+
+    it('createPlaylist rejects when the server returns no id', async () => {
+      const http = new FakeHttp({ 'POST /Playlists': {} });
+      await expect(fakeClient(http).createPlaylist('x')).rejects.toBeInstanceOf(JellyfinError);
+    });
+
+    it('parses and writes back the playlist entry id', () => {
+      const item = parseBaseItem({ Id: 't1', Name: 'T', Type: 'Audio', PlaylistItemId: 'e7' });
+      expect(item.playlistItemId).toBe('e7');
+      expect(baseItemToJson(item)['PlaylistItemId']).toBe('e7');
     });
   });
 });

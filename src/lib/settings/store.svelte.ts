@@ -14,10 +14,16 @@ import type {
 import type { KeyValueStore } from '../platform';
 import { EngineErrors } from '../player/errors.svelte';
 import {
+  DEFAULT_APPEARANCE,
+  DEFAULT_BEHAVIOR,
   DEFAULT_DISCORD,
   DEFAULT_DSP,
   DEFAULT_SETTINGS,
+  START_SCREENS,
+  type AppearanceSettings,
   type AppSettings,
+  type BehaviorSettings,
+  type Density,
   type DiscordButtonTemplate,
   type DiscordSettings,
   type ThemeMode,
@@ -47,6 +53,8 @@ const CROSSFEED: readonly CrossfeedLevel[] = ['off', 'low', 'medium', 'high'];
 const DITHER: readonly DitherMode[] = ['off', 'tpdf', 'shaped'];
 const DSD: readonly DsdMode[] = ['dop', 'pcm'];
 const THEMES: readonly ThemeMode[] = ['dark', 'light', 'system'];
+const DENSITIES: readonly Density[] = ['comfortable', 'compact'];
+const HEX_COLOR = /^#[0-9a-f]{6}$/i;
 
 export function parseDsp(j: unknown): DspConfig {
   const o: Json = isObj(j) ? j : {};
@@ -105,6 +113,28 @@ export function parseDiscord(j: unknown): DiscordSettings {
   };
 }
 
+export function parseAppearance(j: unknown): AppearanceSettings {
+  const o: Json = isObj(j) ? j : {};
+  const d = DEFAULT_APPEARANCE;
+  const color = strOr(o.accentColor, d.accentColor);
+  return {
+    accentFromCover: bool(o.accentFromCover, d.accentFromCover),
+    accentColor: HEX_COLOR.test(color) ? color.toLowerCase() : d.accentColor,
+    density: enumOf(DENSITIES, o.density, d.density),
+    artBackdrop: bool(o.artBackdrop, d.artBackdrop),
+    reduceMotion: bool(o.reduceMotion, d.reduceMotion),
+  };
+}
+
+export function parseBehavior(j: unknown): BehaviorSettings {
+  const o: Json = isObj(j) ? j : {};
+  const d = DEFAULT_BEHAVIOR;
+  return {
+    resumePlayback: bool(o.resumePlayback, d.resumePlayback),
+    startScreen: enumOf(START_SCREENS, o.startScreen, d.startScreen),
+  };
+}
+
 export function parseSettings(j: unknown): AppSettings {
   const o: Json = isObj(j) ? j : {};
   const maxBitrate = num(o.maxBitrate);
@@ -114,6 +144,8 @@ export function parseSettings(j: unknown): AppSettings {
     maxBitrate: maxBitrate === null ? null : Math.trunc(maxBitrate),
     dsp: parseDsp(o.dsp),
     themeMode: enumOf(THEMES, o.themeMode, 'dark'),
+    appearance: parseAppearance(o.appearance),
+    behavior: parseBehavior(o.behavior),
     scrobbleListenBrainz: bool(o.scrobbleListenBrainz, false),
     scrobbleLastFm: bool(o.scrobbleLastFm, false),
     discord: parseDiscord(o.discord),
@@ -219,6 +251,16 @@ export class SettingsStore {
 
   async setThemeMode(mode: ThemeMode): Promise<void> {
     this.set({ ...this.current, themeMode: mode });
+    this.save();
+  }
+
+  async updateAppearance(change: Change<AppearanceSettings>): Promise<void> {
+    this.set({ ...this.current, appearance: parseAppearance(applyChange(this.current.appearance, change)) });
+    this.save();
+  }
+
+  async updateBehavior(change: Change<BehaviorSettings>): Promise<void> {
+    this.set({ ...this.current, behavior: parseBehavior(applyChange(this.current.behavior, change)) });
     this.save();
   }
 

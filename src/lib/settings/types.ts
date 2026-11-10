@@ -39,6 +39,29 @@ export interface DiscordSettings {
   buttons: [DiscordButtonTemplate, DiscordButtonTemplate];
 }
 
+export type Density = 'comfortable' | 'compact';
+
+export interface AppearanceSettings {
+  /** Tint the UI with a colour taken from the current cover. */
+  accentFromCover: boolean;
+  /** Accent used when nothing plays or cover tinting is off (#rrggbb). */
+  accentColor: string;
+  density: Density;
+  /** Blurred cover art behind now playing and detail headers. */
+  artBackdrop: boolean;
+  /** Turns animations off (they are also off when the OS asks for reduced motion). */
+  reduceMotion: boolean;
+}
+
+export const START_SCREENS = ['home', 'albums', 'artists', 'playlists', 'favorites'] as const;
+export type StartScreen = (typeof START_SCREENS)[number];
+
+export interface BehaviorSettings {
+  /** Restore the queue and position (paused) on the next start. */
+  resumePlayback: boolean;
+  startScreen: StartScreen;
+}
+
 export interface AppSettings {
   /** null = system default device. */
   outputDeviceId: string | null;
@@ -47,6 +70,8 @@ export interface AppSettings {
   maxBitrate: number | null;
   dsp: DspConfig;
   themeMode: ThemeMode;
+  appearance: AppearanceSettings;
+  behavior: BehaviorSettings;
   scrobbleListenBrainz: boolean;
   scrobbleLastFm: boolean;
   discord: DiscordSettings;
@@ -85,12 +110,29 @@ export const DEFAULT_DISCORD: DiscordSettings = {
   ],
 };
 
+export const DEFAULT_ACCENT = '#c9a7ff';
+
+export const DEFAULT_APPEARANCE: AppearanceSettings = {
+  accentFromCover: true,
+  accentColor: DEFAULT_ACCENT,
+  density: 'comfortable',
+  artBackdrop: true,
+  reduceMotion: false,
+};
+
+export const DEFAULT_BEHAVIOR: BehaviorSettings = {
+  resumePlayback: true,
+  startScreen: 'home',
+};
+
 export const DEFAULT_SETTINGS: AppSettings = {
   outputDeviceId: null,
   exclusive: false,
   maxBitrate: null,
   dsp: DEFAULT_DSP,
   themeMode: 'dark',
+  appearance: DEFAULT_APPEARANCE,
+  behavior: DEFAULT_BEHAVIOR,
   scrobbleListenBrainz: false,
   scrobbleLastFm: false,
   discord: DEFAULT_DISCORD,
