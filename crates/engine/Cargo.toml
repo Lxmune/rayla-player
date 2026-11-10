@@ -22,7 +22,7 @@ native-tls = "0.2"
 [target.'cfg(target_os = "android")'.dependencies]
 ureq = { version = "2", default-features = false, features = ["tls"] }
 # AAudio output (API 26+).
-ndk = { version = "0.9", default-features = false, features = ["audio", "api-level-26"] }
+ndk-sys = { version = "0.6", features = ["audio"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 wasapi = "0.19"
