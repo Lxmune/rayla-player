@@ -24,6 +24,7 @@ import {
   DEFAULT_STREAMING,
   DEFAULT_PLAYBACK,
   DEFAULT_DOWNLOADS,
+  DOWNLOAD_QUALITIES,
   CROSSFADE_MODES,
   MAX_PREFETCH_TRACKS,
   CACHE_LIMIT_MAX_MB,
@@ -202,7 +203,11 @@ export function parsePlayback(j: unknown): PlaybackSettings {
 
 export function parseDownloads(j: unknown): DownloadSettings {
   const o: Json = isObj(j) ? j : {};
-  return { wifiOnly: bool(o.wifiOnly, DEFAULT_DOWNLOADS.wifiOnly), dir: strOrNull(o.dir) };
+  return {
+    quality: enumOf(DOWNLOAD_QUALITIES, o.quality, DEFAULT_DOWNLOADS.quality),
+    wifiOnly: bool(o.wifiOnly, DEFAULT_DOWNLOADS.wifiOnly),
+    dir: strOrNull(o.dir),
+  };
 }
 
 export function parseSettings(j: unknown): AppSettings {

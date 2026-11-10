@@ -3,10 +3,19 @@
 
 import type { DownloadRecord, Ipc } from '../ipc';
 import type { JellyfinClient } from '../jellyfin/client';
-import { baseItemToJson, firstMediaSource, formatBytes, parseBaseItem, type BaseItem } from '../jellyfin/models';
+import {
+  baseItemToJson,
+  firstMediaSource,
+  formatBytes,
+  parseBaseItem,
+  willTranscode,
+  type BaseItem,
+} from '../jellyfin/models';
 import { errorMessage, type EngineErrors } from '../player/errors.svelte';
 import type { KeyValueStore } from '../platform';
 import type { NetworkType } from '../android';
+import type { DownloadQuality } from '../settings/types';
+import { DOWNLOAD_PRESETS } from './quality';
 
 export { formatBytes };
 
@@ -53,6 +62,23 @@ export function extensionFor(item: BaseItem): string {
   return ext === '' ? 'bin' : ext;
 }
 
+/**
+ * URL and file extension for downloading `item` at `quality`. A transcoded file gets the
+ * codec's extension (AAC comes as ADTS); a source already within the cap is sent as is.
+ */
+export function downloadSource(
+  client: Pick<JellyfinClient, 'downloadUrl' | 'streamUrl'>,
+  item: BaseItem,
+  quality: DownloadQuality,
+): { url: string; extension: string } {
+  const t = DOWNLOAD_PRESETS[quality].transcode;
+  if (t === null) return { url: client.downloadUrl(item.id), extension: extensionFor(item) };
+  return {
+    url: client.streamUrl(item.id, { maxBitrate: t.maxBitrate, codec: t.codec }),
+    extension: willTranscode(item, t.maxBitrate) ? t.codec : extensionFor(item),
+  };
+}
+
 export function entryFromRecord(rec: DownloadRecord): DownloadEntry {
   const parsed = parseBaseItem(rec.item);
   const item = parsed.id === '' ? { ...parsed, id: rec.id } : parsed;
@@ -74,6 +100,8 @@ export interface DownloadsDeps {
     onChange(cb: (type: NetworkType) => void): Promise<() => void> | (() => void);
   };
   wifiOnly?: () => boolean;
+  /** Quality of new downloads; default original. */
+  quality?: () => DownloadQuality;
 }
 
 /** kv key of a profile's unfinished downloads. */
@@ -277,9 +305,8 @@ export class DownloadsStore {
     try {
       const rec = await this.deps.engine.downloadsStart({
         id: item.id,
-        url: client.downloadUrl(item.id),
+        ...downloadSource(client, item, this.deps.quality?.() ?? 'original'),
         headers: client.authHeaders(),
-        extension: extensionFor(item),
         item: baseItemToJson(item),
       });
       const entry = entryFromRecord(rec);

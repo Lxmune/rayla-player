@@ -9,6 +9,8 @@
     type StorageVolume,
   } from '../../lib/android';
   import { formatBytes } from '../../lib/jellyfin/models';
+  import { DOWNLOAD_PRESETS } from '../../lib/downloads/quality';
+  import { DOWNLOAD_QUALITIES } from '../../lib/settings/types';
   import { errorMessage } from '../../lib/player/errors.svelte';
   import { UI_KEY, type UiState } from '../shell/router.svelte';
   import Section from './Section.svelte';
@@ -23,6 +25,8 @@
   let volumes = $state<StorageVolume[]>([]);
   let exempt = $state<boolean | null>(null);
   let confirming = $state(false);
+
+  const qualityOptions = DOWNLOAD_QUALITIES.map((q) => ({ value: q, label: DOWNLOAD_PRESETS[q].label }));
 
   const dir = $derived(settings.current.downloads.dir);
   const options = $derived.by(() => {
@@ -86,6 +90,16 @@
 </script>
 
 <Section title="Downloads" id="downloads">
+  <SelectRow
+    label="Download quality"
+    hint="Lower qualities are transcoded by the server and take less space; applies to new downloads"
+    value={settings.current.downloads.quality}
+    options={qualityOptions}
+    onchange={(v) => {
+      const quality = DOWNLOAD_QUALITIES.find((q) => q === v);
+      if (quality) void settings.updateDownloads({ quality });
+    }}
+  />
   <ToggleRow
     label="Download on Wi-Fi only"
     hint="Downloads wait while on mobile data and continue on Wi-Fi"

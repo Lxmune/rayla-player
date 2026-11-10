@@ -5,6 +5,7 @@ import { EngineErrors } from '../player/errors.svelte';
 import { FakeDownloadsEngine, FakeHttp, fakeClient, flush, track } from '../test-support';
 import {
   DownloadsStore,
+  downloadSource,
   extensionFor,
   pendingKey,
   formatBytes,
@@ -33,7 +34,42 @@ describe('extensionFor', () => {
   });
 });
 
+describe('downloadSource', () => {
+  const client = fakeClient(new FakeHttp());
+  const flac = (bitrate: number) =>
+    parseBaseItem({ Id: 'x', Type: 'Audio', MediaSources: [{ Id: 's', Container: 'flac', Bitrate: bitrate }] });
+
+  it('original: the Download endpoint and the source extension', () => {
+    expect(downloadSource(client, flac(900_000), 'original')).toEqual({
+      url: 'https://jf.test/Items/x/Download',
+      extension: 'flac',
+    });
+  });
+
+  it('a cap: the universal endpoint; codec extension only when the source is above it', () => {
+    const aac = downloadSource(client, flac(900_000), 'aac-128');
+    expect(aac.url).toContain('/Audio/x/universal');
+    expect(aac.url).toContain('MaxStreamingBitrate=128000');
+    expect(aac.url).toContain('AudioCodec=aac');
+    expect(aac.extension).toBe('aac');
+    const cd = downloadSource(client, flac(2_800_000), 'flac-cd');
+    expect(cd.url).toContain('MaxAudioBitDepth=16');
+    expect(cd.extension).toBe('flac');
+    const mp3 = parseBaseItem({ Id: 'y', Type: 'Audio', MediaSources: [{ Id: 's', Container: 'mp3', Bitrate: 128_000 }] });
+    expect(downloadSource(client, mp3, 'aac-192').extension).toBe('mp3'); // already below: sent as is
+  });
+});
+
 describe('DownloadsStore', () => {
+  it('downloads at the configured quality', async () => {
+    const engine = new FakeDownloadsEngine();
+    const client = fakeClient(new FakeHttp());
+    const store = new DownloadsStore({ engine, client: () => client, quality: () => 'mp3-320' });
+    await store.load();
+    await store.download([track('a')]);
+    expect(engine.started[0]?.url).toContain('AudioCodec=mp3');
+  });
+
   it('loads the Rust-side index, parsing items; pathFor/isDownloaded/totalBytes follow', async () => {
     const { engine, store } = make();
     engine.records = [

@@ -98,7 +98,28 @@ export interface PlaybackSettings {
   sleepFadeOut: boolean;
 }
 
+/**
+ * Offline download quality. `original` = the untouched file; the others ask the server's
+ * universal endpoint for that codec/cap (sources already below it come down as they are).
+ * Presets live in `src/lib/downloads/quality.ts`.
+ */
+export const DOWNLOAD_QUALITIES = [
+  'original',
+  'flac-cd',
+  'mp3-320',
+  'aac-320',
+  'aac-256',
+  'aac-192',
+  'mp3-192',
+  'aac-128',
+  'aac-96',
+  'aac-64',
+] as const;
+export type DownloadQuality = (typeof DOWNLOAD_QUALITIES)[number];
+
 export interface DownloadSettings {
+  /** Quality of new offline downloads; existing ones are kept as they are. */
+  quality: DownloadQuality;
   /** Start/continue offline downloads only on Wi-Fi / Ethernet (Android). */
   wifiOnly: boolean;
   /** Folder for new offline downloads; null = app default. See android.ts listStorageVolumes. */
@@ -204,6 +225,7 @@ export const DEFAULT_PLAYBACK: PlaybackSettings = {
 };
 
 export const DEFAULT_DOWNLOADS: DownloadSettings = {
+  quality: 'original',
   wifiOnly: false,
   dir: null,
 };

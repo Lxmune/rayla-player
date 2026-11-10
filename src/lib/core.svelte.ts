@@ -83,6 +83,7 @@ export function createCore(deps: CoreDeps): Core {
     profileId: () => sessions.active?.id ?? null,
     network: deps.network,
     wifiOnly: () => settings.current.downloads.wifiOnly,
+    quality: () => settings.current.downloads.quality,
   });
   const kept = new KeptStore({
     downloads,
