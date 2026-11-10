@@ -307,6 +307,18 @@
           "markdownDescription": "Denies the clear_now_playing command without any pre-configured scope."
         },
         {
+          "description": "Enables the get_network_type command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-network-type",
+          "markdownDescription": "Enables the get_network_type command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_network_type command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-network-type",
+          "markdownDescription": "Denies the get_network_type command without any pre-configured scope."
+        },
+        {
           "description": "Enables the get_system_insets command without any pre-configured scope.",
           "type": "string",
           "const": "allow-get-system-insets",
@@ -319,6 +331,18 @@
           "markdownDescription": "Denies the get_system_insets command without any pre-configured scope."
         },
         {
+          "description": "Enables the is_ignoring_battery_optimizations command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-is-ignoring-battery-optimizations",
+          "markdownDescription": "Enables the is_ignoring_battery_optimizations command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the is_ignoring_battery_optimizations command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-is-ignoring-battery-optimizations",
+          "markdownDescription": "Denies the is_ignoring_battery_optimizations command without any pre-configured scope."
+        },
+        {
           "description": "Enables the list_audio_outputs command without any pre-configured scope.",
           "type": "string",
           "const": "allow-list-audio-outputs",
@@ -329,6 +353,18 @@
           "type": "string",
           "const": "deny-list-audio-outputs",
           "markdownDescription": "Denies the list_audio_outputs command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the list_storage_volumes command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-list-storage-volumes",
+          "markdownDescription": "Enables the list_storage_volumes command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the list_storage_volumes command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-list-storage-volumes",
+          "markdownDescription": "Denies the list_storage_volumes command without any pre-configured scope."
         },
         {
           "description": "Enables the register_listener command without any pre-configured scope.",
@@ -355,6 +391,18 @@
           "markdownDescription": "Denies the remove_listener command without any pre-configured scope."
         },
         {
+          "description": "Enables the request_ignore_battery_optimizations command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-request-ignore-battery-optimizations",
+          "markdownDescription": "Enables the request_ignore_battery_optimizations command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the request_ignore_battery_optimizations command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-request-ignore-battery-optimizations",
+          "markdownDescription": "Denies the request_ignore_battery_optimizations command without any pre-configured scope."
+        },
+        {
           "description": "Enables the set_system_bars command without any pre-configured scope.",
           "type": "string",
           "const": "allow-set-system-bars",
@@ -379,10 +427,10 @@
           "markdownDescription": "Denies the update_now_playing command without any pre-configured scope."
         },
         {
-          "description": "Media notification, media actions, audio outputs and system bars on Android (no-ops elsewhere).\n#### This default permission set includes:\n\n- `allow-update-now-playing`\n- `allow-clear-now-playing`\n- `allow-list-audio-outputs`\n- `allow-get-system-insets`\n- `allow-set-system-bars`\n- `allow-register-listener`\n- `allow-remove-listener`",
+          "description": "Media notification, media actions, audio outputs and system bars on Android (no-ops elsewhere).\n#### This default permission set includes:\n\n- `allow-update-now-playing`\n- `allow-clear-now-playing`\n- `allow-list-audio-outputs`\n- `allow-get-system-insets`\n- `allow-set-system-bars`\n- `allow-get-network-type`\n- `allow-is-ignoring-battery-optimizations`\n- `allow-request-ignore-battery-optimizations`\n- `allow-list-storage-volumes`\n- `allow-register-listener`\n- `allow-remove-listener`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Media notification, media actions, audio outputs and system bars on Android (no-ops elsewhere).\n#### This default permission set includes:\n\n- `allow-update-now-playing`\n- `allow-clear-now-playing`\n- `allow-list-audio-outputs`\n- `allow-get-system-insets`\n- `allow-set-system-bars`\n- `allow-register-listener`\n- `allow-remove-listener`"
+          "markdownDescription": "Media notification, media actions, audio outputs and system bars on Android (no-ops elsewhere).\n#### This default permission set includes:\n\n- `allow-update-now-playing`\n- `allow-clear-now-playing`\n- `allow-list-audio-outputs`\n- `allow-get-system-insets`\n- `allow-set-system-bars`\n- `allow-get-network-type`\n- `allow-is-ignoring-battery-optimizations`\n- `allow-request-ignore-battery-optimizations`\n- `allow-list-storage-volumes`\n- `allow-register-listener`\n- `allow-remove-listener`"
         }
       ]
     }

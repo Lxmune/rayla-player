@@ -9,6 +9,15 @@ import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
 import android.media.AudioFormat
 import android.media.AudioManager
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.Uri
+import android.os.Environment
+import android.os.StatFs
+import android.os.storage.StorageManager
+import android.provider.Settings
+import android.os.PowerManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -35,6 +44,7 @@ class NowPlayingInfo {
     var playing: Boolean = false
     var canPrevious: Boolean = false
     var canNext: Boolean = false
+    var liked: Boolean = false
 }
 
 @InvokeArg
@@ -80,8 +90,121 @@ class RaylaAndroidPlugin(private val activity: Activity) : Plugin(activity) {
         trigger("outputs-changed", JSObject())
     }
 
+    private val connectivity get() = activity.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+    private var lastNetwork: String? = null
+
+    private val networkCallback = object : ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: Network) = networkMaybeChanged()
+        override fun onLost(network: Network) = networkMaybeChanged()
+        override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) = networkMaybeChanged()
+    }
+
+    private fun transportOf(caps: NetworkCapabilities?): String = when {
+        caps == null -> "none"
+        caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "wifi"
+        caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> "ethernet"
+        caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> "cellular"
+        else -> "other"
+    }
+
+    /** Active network type; a VPN reports its underlying transport where Android exposes it. */
+    private fun currentNetwork(): String {
+        return try {
+            val cm = connectivity
+            val active = cm.activeNetwork ?: return "none"
+            val caps = cm.getNetworkCapabilities(active) ?: return "none"
+            if (caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) {
+                // Prefer the underlying (non-VPN) network that is up.
+                @Suppress("DEPRECATION")
+                val under = cm.allNetworks.mapNotNull { n ->
+                    cm.getNetworkCapabilities(n)?.takeIf {
+                        !it.hasTransport(NetworkCapabilities.TRANSPORT_VPN) &&
+                            it.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                    }
+                }.firstOrNull()
+                if (under != null) transportOf(under) else "other"
+            } else transportOf(caps)
+        } catch (e: Exception) {
+            "other"
+        }
+    }
+
+    private fun networkMaybeChanged() {
+        val now = currentNetwork()
+        if (now == lastNetwork) return
+        lastNetwork = now
+        trigger("network-changed", JSObject().apply { put("type", now) })
+    }
+
+    @Command
+    fun getNetworkType(invoke: Invoke) {
+        invoke.resolve(JSObject().apply { put("type", currentNetwork()) })
+    }
+
+    @Command
+    fun isIgnoringBatteryOptimizations(invoke: Invoke) {
+        val pm = activity.getSystemService(Context.POWER_SERVICE) as PowerManager
+        invoke.resolve(JSObject().apply { put("value", pm.isIgnoringBatteryOptimizations(activity.packageName)) })
+    }
+
+    @Command
+    fun requestIgnoreBatteryOptimizations(invoke: Invoke) {
+        try {
+            val direct = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+                .setData(Uri.parse("package:" + activity.packageName))
+            try {
+                activity.startActivity(direct)
+            } catch (e: Exception) {
+                activity.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+            }
+            invoke.resolve()
+        } catch (e: Exception) {
+            invoke.reject(e.message ?: "battery settings unavailable")
+        }
+    }
+
+    @Command
+    fun listStorageVolumes(invoke: Invoke) {
+        val arr = JSArray()
+        try {
+            val sm = activity.getSystemService(Context.STORAGE_SERVICE) as StorageManager
+            val dirs = activity.getExternalFilesDirs(Environment.DIRECTORY_MUSIC)
+            for (dir in dirs) {
+                if (dir == null) continue
+                try {
+                    if (!dir.exists()) dir.mkdirs()
+                    if (!dir.canWrite()) continue
+                    val vol = sm.getStorageVolume(dir)
+                    val removable = vol?.isRemovable ?: false
+                    val primary = vol?.isPrimary ?: (dir == dirs[0])
+                    val label = if (primary && !removable) "Internal storage"
+                    else vol?.getDescription(activity)?.takeIf { it.isNotBlank() }
+                        ?: if (removable) "SD card" else "Storage"
+                    val st = StatFs(dir.path)
+                    val o = JSObject()
+                    o.put("path", dir.absolutePath)
+                    o.put("label", label)
+                    o.put("removable", removable)
+                    o.put("freeBytes", st.availableBytes)
+                    o.put("totalBytes", st.totalBytes)
+                    arr.put(o)
+                } catch (e: Exception) {
+                    // Skip a volume that can't be inspected.
+                }
+            }
+        } catch (e: Exception) {
+        }
+        invoke.resolve(JSObject().apply { put("volumes", arr) })
+    }
+
     override fun load(webView: WebView) {
         Hub.plugin = this
+        try {
+            lastNetwork = currentNetwork()
+            connectivity.registerDefaultNetworkCallback(networkCallback, main)
+        } catch (e: Exception) {
+            // No ACCESS_NETWORK_STATE: network events simply don't fire.
+        }
         audio.registerAudioDeviceCallback(deviceCallback, main)
     }
 

@@ -6,6 +6,10 @@ permissions = [
   "allow-list-audio-outputs",
   "allow-get-system-insets",
   "allow-set-system-bars",
+  "allow-get-network-type",
+  "allow-is-ignoring-battery-optimizations",
+  "allow-request-ignore-battery-optimizations",
+  "allow-list-storage-volumes",
   "allow-register-listener",
   "allow-remove-listener",
 ]

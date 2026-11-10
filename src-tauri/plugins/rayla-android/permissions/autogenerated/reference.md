@@ -9,6 +9,10 @@ Media notification, media actions, audio outputs and system bars on Android (no-
 - `allow-list-audio-outputs`
 - `allow-get-system-insets`
 - `allow-set-system-bars`
+- `allow-get-network-type`
+- `allow-is-ignoring-battery-optimizations`
+- `allow-request-ignore-battery-optimizations`
+- `allow-list-storage-volumes`
 - `allow-register-listener`
 - `allow-remove-listener`
 
@@ -50,6 +54,32 @@ Denies the clear_now_playing command without any pre-configured scope.
 <tr>
 <td>
 
+`rayla-android:allow-get-network-type`
+
+</td>
+<td>
+
+Enables the get_network_type command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`rayla-android:deny-get-network-type`
+
+</td>
+<td>
+
+Denies the get_network_type command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `rayla-android:allow-get-system-insets`
 
 </td>
@@ -76,6 +106,32 @@ Denies the get_system_insets command without any pre-configured scope.
 <tr>
 <td>
 
+`rayla-android:allow-is-ignoring-battery-optimizations`
+
+</td>
+<td>
+
+Enables the is_ignoring_battery_optimizations command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`rayla-android:deny-is-ignoring-battery-optimizations`
+
+</td>
+<td>
+
+Denies the is_ignoring_battery_optimizations command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `rayla-android:allow-list-audio-outputs`
 
 </td>
@@ -95,6 +151,32 @@ Enables the list_audio_outputs command without any pre-configured scope.
 <td>
 
 Denies the list_audio_outputs command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`rayla-android:allow-list-storage-volumes`
+
+</td>
+<td>
+
+Enables the list_storage_volumes command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`rayla-android:deny-list-storage-volumes`
+
+</td>
+<td>
+
+Denies the list_storage_volumes command without any pre-configured scope.
 
 </td>
 </tr>
@@ -147,6 +229,32 @@ Enables the remove_listener command without any pre-configured scope.
 <td>
 
 Denies the remove_listener command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`rayla-android:allow-request-ignore-battery-optimizations`
+
+</td>
+<td>
+
+Enables the request_ignore_battery_optimizations command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`rayla-android:deny-request-ignore-battery-optimizations`
+
+</td>
+<td>
+
+Denies the request_ignore_battery_optimizations command without any pre-configured scope.
 
 </td>
 </tr>

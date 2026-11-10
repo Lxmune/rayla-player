@@ -29,6 +29,8 @@ pub struct NowPlayingInfo {
     pub playing: bool,
     pub can_previous: bool,
     pub can_next: bool,
+    #[serde(default)]
+    pub liked: bool,
 }
 
 /// Mirrors `OutputDevice` in `src/lib/ipc.ts`.
@@ -135,6 +137,88 @@ async fn set_system_bars<R: Runtime>(app: AppHandle<R>, light_background: bool, 
     Ok(())
 }
 
+/// Mirrors `NetworkType` in `src/lib/android.ts`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NetworkInfo {
+    #[serde(rename = "type")]
+    pub kind: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BoolValue {
+    pub value: bool,
+}
+
+/// Mirrors `StorageVolume` in `src/lib/android.ts`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StorageVolume {
+    pub path: String,
+    pub label: String,
+    pub removable: bool,
+    pub free_bytes: u64,
+    pub total_bytes: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VolumesResponse {
+    pub volumes: Vec<StorageVolume>,
+}
+
+#[command]
+async fn get_network_type<R: Runtime>(app: AppHandle<R>) -> Result<NetworkInfo, String> {
+    #[cfg(target_os = "android")]
+    return native(&app)?
+        .run_mobile_plugin_async("getNetworkType", ())
+        .await
+        .map_err(|e| e.to_string());
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = app;
+        Ok(NetworkInfo { kind: "other".into() })
+    }
+}
+
+#[command]
+async fn is_ignoring_battery_optimizations<R: Runtime>(app: AppHandle<R>) -> Result<BoolValue, String> {
+    #[cfg(target_os = "android")]
+    return native(&app)?
+        .run_mobile_plugin_async("isIgnoringBatteryOptimizations", ())
+        .await
+        .map_err(|e| e.to_string());
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = app;
+        Ok(BoolValue { value: true })
+    }
+}
+
+#[command]
+async fn request_ignore_battery_optimizations<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
+    #[cfg(target_os = "android")]
+    native(&app)?
+        .run_mobile_plugin_async::<()>("requestIgnoreBatteryOptimizations", ())
+        .await
+        .map_err(|e| e.to_string())?;
+    #[cfg(not(target_os = "android"))]
+    let _ = app;
+    Ok(())
+}
+
+#[command]
+async fn list_storage_volumes<R: Runtime>(app: AppHandle<R>) -> Result<VolumesResponse, String> {
+    #[cfg(target_os = "android")]
+    return native(&app)?
+        .run_mobile_plugin_async("listStorageVolumes", ())
+        .await
+        .map_err(|e| e.to_string());
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = app;
+        Ok(VolumesResponse { volumes: Vec::new() })
+    }
+}
+
 /// Used by `addPluginListener`: forwards the JS channel to the Kotlin plugin.
 #[command]
 async fn register_listener<R: Runtime>(
@@ -172,6 +256,10 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             list_audio_outputs,
             get_system_insets,
             set_system_bars,
+            get_network_type,
+            is_ignoring_battery_optimizations,
+            request_ignore_battery_optimizations,
+            list_storage_volumes,
             register_listener,
             remove_listener
         ])

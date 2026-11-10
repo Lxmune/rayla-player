@@ -15,6 +15,8 @@ import android.graphics.BitmapFactory
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
+import android.net.wifi.WifiManager
+import android.os.Bundle
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
@@ -43,6 +45,8 @@ class MediaService : Service() {
         const val ACTION_NEXT = "dev.rayla.action.NEXT"
         const val ACTION_PREVIOUS = "dev.rayla.action.PREVIOUS"
         const val ACTION_STOP = "dev.rayla.action.STOP"
+        const val ACTION_LIKE = "dev.rayla.action.LIKE"
+        const val ACTION_DISLIKE = "dev.rayla.action.DISLIKE"
         private const val CHANNEL_ID = "playback"
         private const val NOTIFICATION_ID = 7301
         private val artCache = object : LruCache<String, Bitmap>(8) {}
@@ -51,6 +55,7 @@ class MediaService : Service() {
 
     private lateinit var session: MediaSessionCompat
     private var wakeLock: PowerManager.WakeLock? = null
+    private var wifiLock: WifiManager.WifiLock? = null
     private var focusRequest: AudioFocusRequest? = null
     private var resumeOnGain = false
     private var noisyRegistered = false
@@ -97,6 +102,12 @@ class MediaService : Service() {
                 override fun onSkipToPrevious() = Hub.emit("previous")
                 override fun onStop() = Hub.emit("stop")
                 override fun onSeekTo(pos: Long) = Hub.emit("seek", pos)
+                override fun onCustomAction(action: String?, extras: Bundle?) {
+                    when (action) {
+                        ACTION_LIKE -> Hub.emit("like")
+                        ACTION_DISLIKE -> Hub.emit("dislike")
+                    }
+                }
             })
             isActive = true
         }
@@ -111,6 +122,8 @@ class MediaService : Service() {
             ACTION_NEXT -> Hub.emit("next")
             ACTION_PREVIOUS -> Hub.emit("previous")
             ACTION_STOP -> Hub.emit("stop")
+            ACTION_LIKE -> Hub.emit("like")
+            ACTION_DISLIKE -> Hub.emit("dislike")
         }
         if (Hub.info == null) {
             // Nothing to show (e.g. a stale notification after the app was killed).
@@ -155,9 +168,12 @@ class MediaService : Service() {
             PlaybackStateCompat.ACTION_SEEK_TO
         if (info.canPrevious) actions = actions or PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS
         if (info.canNext) actions = actions or PlaybackStateCompat.ACTION_SKIP_TO_NEXT
+        val likeIcon = if (info.liked) R.drawable.ic_like_filled else R.drawable.ic_like
         session.setPlaybackState(
             PlaybackStateCompat.Builder()
                 .setActions(actions)
+                .addCustomAction(ACTION_LIKE, if (info.liked) "Remove from favourites" else "Favourite", likeIcon)
+                .addCustomAction(ACTION_DISLIKE, "Not for me", R.drawable.ic_dislike)
                 .setState(
                     if (info.playing) PlaybackStateCompat.STATE_PLAYING else PlaybackStateCompat.STATE_PAUSED,
                     info.positionMs,
@@ -170,10 +186,12 @@ class MediaService : Service() {
             resumeOnGain = false
             requestFocus()
             acquireWakeLock()
+            acquireWifiLock()
             registerNoisy()
         } else {
             if (!resumeOnGain) abandonFocus()
             releaseWakeLock()
+            releaseWifiLock()
             unregisterNoisy()
         }
 
@@ -197,6 +215,7 @@ class MediaService : Service() {
         abandonFocus()
         resumeOnGain = false
         releaseWakeLock()
+        releaseWifiLock()
         unregisterNoisy()
         stopForeground(STOP_FOREGROUND_REMOVE)
         inForeground = false
@@ -207,6 +226,7 @@ class MediaService : Service() {
     override fun onDestroy() {
         abandonFocus()
         releaseWakeLock()
+        releaseWifiLock()
         unregisterNoisy()
         session.isActive = false
         session.release()
@@ -271,6 +291,14 @@ class MediaService : Service() {
             b.addAction(action(android.R.drawable.ic_media_next, "Next", ACTION_NEXT))
             compact.add(playIdx + 1)
         }
+        b.addAction(
+            action(
+                if (info.liked) R.drawable.ic_like_filled else R.drawable.ic_like,
+                if (info.liked) "Remove from favourites" else "Favourite",
+                ACTION_LIKE
+            )
+        )
+        b.addAction(action(R.drawable.ic_dislike, "Not for me", ACTION_DISLIKE))
         b.setStyle(
             MediaStyle()
                 .setMediaSession(session.sessionToken)
@@ -361,6 +389,30 @@ class MediaService : Service() {
     private fun releaseWakeLock() {
         wakeLock?.let { if (it.isHeld) it.release() }
         wakeLock = null
+    }
+
+    @Suppress("DEPRECATION")
+    private fun acquireWifiLock() {
+        if (wifiLock?.isHeld == true) return
+        try {
+            val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+            val mode = if (Build.VERSION.SDK_INT >= 29) WifiManager.WIFI_MODE_FULL_LOW_LATENCY
+            else WifiManager.WIFI_MODE_FULL_HIGH_PERF
+            wifiLock = wm.createWifiLock(mode, "rayla:playback").apply {
+                setReferenceCounted(false)
+                acquire()
+            }
+        } catch (e: Exception) {
+            // Missing permission or no Wi-Fi hardware: streaming still works, just without the lock.
+        }
+    }
+
+    private fun releaseWifiLock() {
+        try {
+            wifiLock?.let { if (it.isHeld) it.release() }
+        } catch (e: Exception) {
+        }
+        wifiLock = null
     }
 
     private fun registerNoisy() {

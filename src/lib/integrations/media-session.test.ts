@@ -41,7 +41,7 @@ class FakePlayer implements MediaSessionPlayer {
   }
 }
 
-function build() {
+function build(extra: Partial<ConstructorParameters<typeof MediaSession>[0]> = {}) {
   const player = new FakePlayer();
   const infos: NowPlayingInfo[] = [];
   let cleared = 0;
@@ -60,6 +60,7 @@ function build() {
       },
     },
     onError: (e) => errors.push(e),
+    ...extra,
   });
   return {
     player, session, infos, errors,
@@ -188,5 +189,30 @@ describe('MediaSession', () => {
     await settle();
     expect(t.infos).toHaveLength(0);
     expect(t.player.calls).toHaveLength(0);
+  });
+
+  it('sends liked and routes like / dislike; ignores them without callbacks', async () => {
+    let liked = false;
+    const calls: string[] = [];
+    const t = build({ isLiked: () => liked, onLike: () => calls.push('like'), onDislike: () => calls.push('dislike') });
+    await t.session.start();
+    t.player.set(0, 3, 'playing');
+    t.player.fire();
+    await settle();
+    expect(t.infos[0]!.liked).toBe(false);
+    liked = true;
+    t.session.observe();
+    await settle();
+    expect(t.infos[1]!.liked).toBe(true);
+    t.act({ type: 'like' });
+    t.act({ type: 'dislike' });
+    expect(calls).toEqual(['like', 'dislike']);
+
+    const u = build();
+    await u.session.start();
+    u.act({ type: 'like' });
+    u.act({ type: 'dislike' });
+    expect(u.errors).toHaveLength(0);
+    expect(u.player.calls).toEqual([]);
   });
 });

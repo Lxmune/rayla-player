@@ -35,6 +35,12 @@ export interface MediaSessionDeps {
   bridge: MediaBridge;
   /** Called when a player action from the OS fails. */
   onError?: (e: unknown) => void;
+  /** Whether a track is a favourite (notification heart filled). */
+  isLiked?: (item: BaseItem) => boolean;
+  /** Notification "like" action (toggle favourite); ignored when absent. */
+  onLike?: () => void;
+  /** Notification "not for me" action; ignored when absent. */
+  onDislike?: () => void;
   clock?: () => number;
 }
 
@@ -98,6 +104,7 @@ export class MediaSession {
       Math.floor(p.durationMs / 1000),
       this.canPrevious(),
       this.canNext(),
+      this.liked(p.current),
     ]);
     const changed = key !== this.key;
     this.key = key;
@@ -116,6 +123,15 @@ export class MediaSession {
   }
 
   private lastPlaying = false;
+
+  private liked(item: BaseItem | null): boolean {
+    if (item === null) return false;
+    try {
+      return this.d.isLiked?.(item) ?? false;
+    } catch {
+      return false;
+    }
+  }
 
   private canNext(): boolean {
     const p = this.d.player;
@@ -159,6 +175,7 @@ export class MediaSession {
         playing: p.playback === 'playing' || p.playback === 'buffering',
         canPrevious: this.canPrevious(),
         canNext: this.canNext(),
+        liked: this.liked(item),
       })
       .catch(() => {});
   }
@@ -196,6 +213,12 @@ export class MediaSession {
       case 'seek':
         call = p.seek(a.positionMs);
         break;
+      case 'like':
+        this.d.onLike?.();
+        return Promise.resolve();
+      case 'dislike':
+        this.d.onDislike?.();
+        return Promise.resolve();
       default:
         return Promise.resolve();
     }
