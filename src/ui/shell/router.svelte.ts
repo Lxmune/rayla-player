@@ -33,6 +33,12 @@ export class Router {
   /** The sidebar section: the root the history started from (stack[0] is always a root). */
   section = $derived<RootRoute>(((r) => (r && !isDetail(r) ? r.name : 'home'))(this.stack[0]));
 
+  /**
+   * Steps the system Back gesture can still take inside the app: one per detail route,
+   * plus one to return to Home from another root section.
+   */
+  depth = $derived(this.stack.length - 1 + (this.stack[0]?.name === 'home' ? 0 : 1));
+
   constructor(start: RootRoute = 'home') {
     this.stack = [{ name: start }];
   }
@@ -54,6 +60,12 @@ export class Router {
     if (this.stack.length <= 1 || !top) return;
     this.stack = this.stack.slice(0, -1);
     this.forwardStack = [...this.forwardStack, top];
+  }
+
+  /** One system-Back step: pop a detail route, else return to Home. */
+  up(): void {
+    if (this.stack.length > 1) this.back();
+    else if (this.stack[0]?.name !== 'home') this.go('home');
   }
 
   forward(): void {

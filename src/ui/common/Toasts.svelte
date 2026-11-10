@@ -40,6 +40,11 @@
     gap: var(--space-2);
     pointer-events: none;
   }
+  @media (max-width: 640px) {
+    .toasts {
+      bottom: calc(var(--dock-h, 0px) + var(--space-4));
+    }
+  }
   .toast {
     display: flex;
     align-items: center;

@@ -11,6 +11,9 @@
   import { useActions } from '../common/actions';
   import { useItemMenu } from '../common/item-menu';
   import { getRouter, getUi } from './router.svelte';
+  import { classifySwipe } from './swipe';
+
+  let { phone = false }: { phone?: boolean } = $props();
 
   const app = getApp();
   const router = getRouter();
@@ -32,12 +35,46 @@
     const artist = await actions.artistOf(item);
     if (artist) router.open(artist);
   }
+
+  // Phone mini player gestures: swipe up opens now playing, swipe sideways skips.
+  let start: { x: number; y: number } | null = null;
+  let swiped = false;
+  function onpointerdown(e: PointerEvent) {
+    if (!phone || !item) return;
+    start = { x: e.clientX, y: e.clientY };
+    swiped = false;
+  }
+  function onpointerup(e: PointerEvent) {
+    if (!start) return;
+    const result = classifySwipe(e.clientX - start.x, e.clientY - start.y);
+    start = null;
+    if (result === 'none' || result === 'tap') return;
+    swiped = true;
+    if (result === 'up') openNowPlaying();
+    else void actions.guard(() => (result === 'left' ? player.next() : player.previous()));
+  }
+  /** A swipe must not also trigger the click of the control it started on. */
+  function onclickcapture(e: MouseEvent) {
+    if (!swiped) return;
+    swiped = false;
+    e.stopPropagation();
+    e.preventDefault();
+  }
   function oncontextmenu(e: MouseEvent) {
     if (item) ui.openMenu(e, menuFor(item));
   }
 </script>
 
-<footer class="bar" class:empty={!item} aria-label="Player">
+<footer
+  class="bar"
+  class:empty={!item}
+  class:phone
+  aria-label="Player"
+  {onpointerdown}
+  {onpointerup}
+  onpointercancel={() => (start = null)}
+  {onclickcapture}
+>
   <span class="mini-progress" style:transform="scaleX({progress})" aria-hidden="true"></span>
   <div class="now" {oncontextmenu} role="presentation">
     {#if item}
@@ -66,6 +103,7 @@
   </div>
   <div class="right">
     <BitPerfectBadge />
+    <IconButton icon="sliders" label="Output" onclick={() => (ui.sheet = { kind: 'output' })} />
     <IconButton icon="lyrics" label="Lyrics" disabled={!item} onclick={openLyrics} />
     <IconButton
       icon="queue"
@@ -196,23 +234,40 @@
       display: none;
     }
   }
-  /* Phone: a one-row mini player docked on the tab bar; tap it for now playing. */
+  /* Phone: a floating rounded card above the content; tap or swipe up for now playing. */
   @media (max-width: 640px) {
     .bar {
+      position: fixed;
+      left: var(--space-2);
+      right: var(--space-2);
+      bottom: var(--space-2);
+      z-index: calc(var(--z-sticky) + 5);
       grid-template-columns: minmax(0, 1fr) auto;
       gap: var(--space-2);
       height: 64px;
-      padding: 0 var(--space-2) 0 var(--space-3);
-      border-top: 0;
-      background: color-mix(in srgb, var(--accent) 14%, var(--surface-2));
+      padding: 0 var(--space-2) 0 var(--space-2);
+      border: 1px solid var(--glass-border);
+      border-radius: var(--radius-lg);
+      background: color-mix(in srgb, var(--accent) 18%, var(--surface-2));
       backdrop-filter: none;
+      box-shadow: var(--shadow-2);
+      overflow: hidden;
+      touch-action: none;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
     }
     .bar.empty {
       display: none;
     }
+    .art {
+      border-radius: var(--radius-md);
+    }
     .art :global(.art) {
       width: 44px !important;
       height: 44px !important;
+    }
+    .expand {
+      display: none;
     }
     .now :global(.icon-btn),
     .right,
@@ -225,6 +280,14 @@
     .center {
       width: auto;
     }
+    .center :global(.icon-btn) {
+      min-width: 44px;
+      min-height: 44px;
+    }
+    .title,
+    .artist {
+      min-height: 22px;
+    }
     .title:hover,
     .artist:hover {
       text-decoration: none;
@@ -232,10 +295,11 @@
     .mini-progress {
       display: block;
       position: absolute;
-      left: 0;
-      right: 0;
+      left: var(--space-3);
+      right: var(--space-3);
       bottom: 0;
       height: 2px;
+      border-radius: 2px;
       background: var(--accent);
       transform-origin: left;
     }

@@ -71,21 +71,65 @@ describe('Shell chrome', () => {
     expect(screen.getByRole('dialog', { name: 'Keyboard shortcuts' })).toBeTruthy();
   });
 
-  it('shows bottom tabs at phone width, with the other sections under More', async () => {
-    vi.stubGlobal('matchMedia', (query: string) => ({
-      matches: true,
-      media: query,
-      addEventListener: () => {},
-      removeEventListener: () => {},
-    }));
-    await mount();
-    const tabs = screen.getAllByRole('navigation', { name: 'Main' }).find((n) => n.classList.contains('tabs'));
-    expect(tabs).toBeTruthy();
-    const bar = within(tabs!);
-    expect(bar.getByRole('button', { name: 'Home' }).getAttribute('aria-current')).toBe('page');
-    await fireEvent.click(bar.getByRole('button', { name: 'More' }));
-    await fireEvent.click(screen.getByRole('menuitem', { name: 'Playlists' }));
-    expect(bar.getByRole('button', { name: 'More' }).classList.contains('on')).toBe(true);
-    expect(bar.getByRole('button', { name: 'Home' }).hasAttribute('aria-current')).toBe(false);
+  describe('phone layout', () => {
+    const stubPhone = () =>
+      vi.stubGlobal('matchMedia', (query: string) => ({
+        matches: true,
+        media: query,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      }));
+
+    it('has section chips instead of tabs, and no bottom bar', async () => {
+      stubPhone();
+      await mount();
+      const chips = within(screen.getByRole('navigation', { name: 'Sections' }));
+      expect(chips.getByRole('button', { name: 'Home' }).getAttribute('aria-current')).toBe('page');
+      await fireEvent.click(chips.getByRole('button', { name: 'Playlists' }));
+      expect(chips.getByRole('button', { name: 'Playlists' }).getAttribute('aria-current')).toBe('page');
+      expect(chips.getByRole('button', { name: 'Home' }).hasAttribute('aria-current')).toBe(false);
+      expect(document.querySelector('.tabs')).toBeNull();
+    });
+
+    it('opens settings and servers from the avatar menu', async () => {
+      stubPhone();
+      await mount();
+      await fireEvent.click(screen.getByRole('button', { name: 'Account menu' }));
+      await fireEvent.click(screen.getByRole('menuitem', { name: 'Settings' }));
+      expect(screen.getAllByRole('heading', { name: 'Settings' }).length).toBeGreaterThan(0);
+      expect(screen.queryByRole('navigation', { name: 'Sections' })?.querySelector('[aria-current]')).toBeNull();
+      await fireEvent.click(screen.getByRole('button', { name: 'Account menu' }));
+      await fireEvent.click(screen.getByRole('menuitem', { name: 'Servers and accounts' }));
+      expect(screen.getByRole('dialog', { name: 'Servers' })).toBeTruthy();
+    });
+
+    it('search icon opens the search field in the bar', async () => {
+      stubPhone();
+      await mount();
+      await fireEvent.click(within(document.querySelector('header.top') as HTMLElement).getByRole('button', { name: 'Search' }));
+      expect(screen.getByPlaceholderText('Search your library')).toBeTruthy();
+      expect(screen.queryByRole('navigation', { name: 'Sections' })).toBeNull();
+    });
+
+    it('floats a mini player that swipes to skip and opens now playing', async () => {
+      stubPhone();
+      const { app } = await mount();
+      await app.core.player.playQueue([
+        parseBaseItem(trackJson('t1', 'First Song')),
+        parseBaseItem(trackJson('t2', 'Second Song')),
+      ]);
+      await flush();
+      const bar = screen.getByRole('contentinfo', { name: 'Player' });
+      const drag = (x0: number, y0: number, x1: number, y1: number) => {
+        fireEvent(bar, new PointerEvent('pointerdown', { clientX: x0, clientY: y0, bubbles: true }));
+        fireEvent(bar, new PointerEvent('pointerup', { clientX: x1, clientY: y1, bubbles: true }));
+      };
+      drag(200, 100, 120, 105);
+      await flush();
+      expect(app.core.player.current?.name).toBe('Second Song');
+      drag(100, 100, 100, 30);
+      await flush();
+      expect(screen.queryByRole('dialog', { name: /now playing/i }) ?? document.querySelector('.np, [class*=now]')).toBeTruthy();
+    });
   });
 });

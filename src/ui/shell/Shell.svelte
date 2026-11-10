@@ -26,10 +26,11 @@
   import { useActions } from '../common/actions';
   import NowPlaying from '../now-playing/NowPlaying.svelte';
   import PlayerBar from './PlayerBar.svelte';
-  import BottomNav from './BottomNav.svelte';
   import QueueDrawer from './QueueDrawer.svelte';
   import Sidebar from './Sidebar.svelte';
   import TopBar from './TopBar.svelte';
+  import { HistorySync } from './history-sync';
+  import { watchPhone } from './phone';
   import { shortcutFor, type ShortcutAction } from './shortcuts';
   import {
     Router,
@@ -58,6 +59,31 @@
       ui.sheet = null;
     });
   });
+
+  let phone = $state(false);
+  $effect(() => watchPhone((p) => (phone = p)));
+  const miniVisible = $derived(phone && app.core.player.current !== null);
+
+  // System Back (Android gesture) walks overlays, then routes, then exits.
+  const layers = $derived(
+    router.depth +
+      (ui.menu ? 1 : 0) +
+      (ui.sheet ? 1 : 0) +
+      (ui.nowPlayingOpen ? 1 : 0) +
+      (ui.queueOpen ? 1 : 0),
+  );
+  const sync = new HistorySync({
+    layers: () => layers,
+    closeTop() {
+      if (ui.menu) ui.closeMenu();
+      else if (ui.sheet) ui.sheet = null;
+      else if (ui.nowPlayingOpen) ui.nowPlayingOpen = false;
+      else if (ui.queueOpen) ui.queueOpen = false;
+      else router.up();
+    },
+  });
+  $effect(() => sync.attach());
+  $effect(() => sync.update(layers));
 
   let scroller: HTMLElement | undefined = $state();
   let topbar: { focusSearch: () => void } | undefined = $state();
@@ -158,7 +184,7 @@
 
 <svelte:window {onkeydown} {onmouseup} />
 
-<div class="shell">
+<div class="shell" class:phone class:has-mini={miniVisible}>
   <div class="main-row">
     <Sidebar />
     <div class="column">
@@ -167,7 +193,7 @@
         bind:this={scroller}
         onscroll={() => (scrolled = (scroller?.scrollTop ?? 0) > 4)}
       >
-        <TopBar bind:this={topbar} {scrolled} />
+        <TopBar bind:this={topbar} {scrolled} {phone} />
         <main class="content">
           {#key route}
             <div class="page">
@@ -209,8 +235,7 @@
       <QueueDrawer />
     {/if}
   </div>
-  <PlayerBar />
-  <BottomNav />
+  <PlayerBar {phone} />
 
   {#if ui.nowPlayingOpen}
     <NowPlaying />
@@ -247,6 +272,15 @@
     /* Edge-to-edge on Android/iOS: keep clear of the status bar / notch. */
     padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) 0 env(safe-area-inset-left, 0px);
     background: var(--bg);
+    --dock-h: 0px;
+    -webkit-tap-highlight-color: transparent;
+  }
+  /* Room for the floating mini player (64px card + its inset above and below). */
+  .shell.has-mini {
+    --dock-h: calc(64px + var(--space-2) * 2);
+  }
+  .shell.has-mini .content {
+    padding-bottom: calc(var(--dock-h) + var(--space-4));
   }
   .main-row {
     position: relative;

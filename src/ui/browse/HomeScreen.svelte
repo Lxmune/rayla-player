@@ -160,6 +160,16 @@
     font-weight: var(--weight-bold);
     letter-spacing: var(--tracking-tight);
   }
+  @media (max-width: 640px) {
+    /* The phone top bar shows the greeting. */
+    h1 {
+      display: none;
+    }
+    .head {
+      justify-content: flex-end;
+      margin-bottom: var(--space-2);
+    }
+  }
   h2 {
     margin: 0 0 var(--space-2);
     font-size: var(--text-lg);
