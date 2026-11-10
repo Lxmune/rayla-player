@@ -64,7 +64,7 @@
   }
 </script>
 
-<Section title="Parametric EQ">
+<Section title="Parametric EQ" id="eq">
   <ToggleRow
     label="Enable EQ"
     checked={dsp.eqEnabled}

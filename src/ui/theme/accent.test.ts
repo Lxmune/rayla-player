@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { contrastFor, pickAccent } from './accent';
+import { accentFromHex, contrastFor, pickAccent } from './accent';
 
 function pixels(n: number, rgba: [number, number, number, number]): number[] {
   return Array.from({ length: n }, () => rgba).flat();
@@ -55,5 +55,29 @@ describe('pickAccent', () => {
   it('contrastFor picks dark text on bright and light text on dark colours', () => {
     expect(contrastFor([255, 255, 100])).toBe('#111111');
     expect(contrastFor([20, 20, 120])).toBe('#ffffff');
+  });
+});
+
+describe('accentFromHex', () => {
+  const lum = (hex: string) => {
+    const [r, g, b] = parse(hex);
+    return 0.299 * r + 0.587 * g + 0.114 * b;
+  };
+
+  it('rejects invalid colours and expands short hex', () => {
+    expect(accentFromHex('nope')).toBeNull();
+    expect(accentFromHex('#12')).toBeNull();
+    expect(accentFromHex('#fff')?.accent).toBe('#ffffff');
+  });
+
+  it('keeps readable colours as chosen', () => {
+    const a = accentFromHex('#c9a7ff', 'dark')!;
+    expect(a.accent).toBe('#c9a7ff');
+    expect(a.contrast).toBe('#111111');
+  });
+
+  it('lightens too-dark colours on dark and darkens bright ones on light', () => {
+    expect(lum(accentFromHex('#102040', 'dark')!.accent)).toBeGreaterThan(lum('#102040'));
+    expect(lum(accentFromHex('#ffee88', 'light')!.accent)).toBeLessThan(lum('#ffee88'));
   });
 });

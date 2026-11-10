@@ -12,7 +12,7 @@
   }));
 </script>
 
-<Section title="Streaming">
+<Section title="Streaming" id="streaming">
   <SelectRow
     label="Bitrate cap"
     hint="Lower caps make the server transcode; Original is bit-exact"

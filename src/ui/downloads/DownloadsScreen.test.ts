@@ -41,11 +41,11 @@ describe('DownloadsScreen', () => {
     render(DownloadsScreen, { context: b.context });
     const names = screen.getAllByText(/^Track /).map((e) => e.textContent);
     expect(names).toEqual(['Track bb', 'Track a']);
-    expect(screen.getByText(/2 tracks · 300 B/)).toBeTruthy();
+    expect(screen.getByText(/^2 tracks · 300 B$/)).toBeTruthy();
     await fireEvent.click(screen.getByRole('button', { name: 'Play Track a' }));
     await flush();
     expect(b.engine.calls).toContain('load(a,true)');
-    await fireEvent.click(screen.getByRole('button', { name: 'Delete Track a' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Remove Track a' }));
     expect(b.dl.deleted).toEqual(['a']);
   });
 
@@ -54,12 +54,12 @@ describe('DownloadsScreen', () => {
     b.dl.manual = false;
     await b.app.core.downloads.download([track('a'), track('bb')]);
     render(DownloadsScreen, { context: b.context });
-    await fireEvent.click(screen.getByRole('button', { name: 'Delete all' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Remove all' }));
     expect(b.dl.deleted).toEqual([]);
     await fireEvent.click(screen.getByRole('button', { name: 'Keep' }));
     expect(b.dl.deleted).toEqual([]);
-    await fireEvent.click(screen.getByRole('button', { name: 'Delete all' }));
-    await fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Remove all' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
     await waitFor(() => expect(b.dl.deleted.sort()).toEqual(['a', 'bb']));
   });
 
@@ -70,5 +70,33 @@ describe('DownloadsScreen', () => {
     await b.app.core.downloads.download([track('a')]);
     render(DownloadsScreen, { context: b.context });
     expect(screen.getByText('disk full')).toBeTruthy();
+  });
+
+  it('filters, sorts and can switch off album grouping', async () => {
+    const b = await setup();
+    b.dl.manual = false;
+    await b.app.core.downloads.download([track('a'), track('bb')]);
+    render(DownloadsScreen, { context: b.context });
+    expect(screen.getByRole('button', { name: 'Play Album' })).toBeTruthy();
+    await fireEvent.input(screen.getByRole('searchbox', { name: 'Filter downloads' }), { target: { value: 'track bb' } });
+    expect(screen.queryByText('Track a')).toBeNull();
+    expect(screen.getByText('Track bb')).toBeTruthy();
+    await fireEvent.input(screen.getByRole('searchbox'), { target: { value: 'nope' } });
+    expect(screen.getByText(/Nothing matches/)).toBeTruthy();
+    await fireEvent.input(screen.getByRole('searchbox'), { target: { value: '' } });
+    await fireEvent.click(screen.getByRole('switch', { name: 'Group by album' }));
+    expect(screen.queryByRole('button', { name: 'Play Album' })).toBeNull();
+    await fireEvent.change(screen.getByLabelText('Sort downloads'), { target: { value: 'name' } });
+    expect(screen.getAllByText(/^Track /).map((e) => e.textContent)).toEqual(['Track a', 'Track bb']);
+  });
+
+  it('Play all queues the visible tracks', async () => {
+    const b = await setup();
+    b.dl.manual = false;
+    await b.app.core.downloads.download([track('a'), track('bb')]);
+    render(DownloadsScreen, { context: b.context });
+    await fireEvent.click(screen.getByRole('button', { name: 'Play all' }));
+    await flush();
+    expect(b.app.core.player.queue).toHaveLength(2);
   });
 });

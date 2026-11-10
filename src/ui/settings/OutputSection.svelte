@@ -47,7 +47,7 @@
   }
 </script>
 
-<Section title="Output">
+<Section title="Output" id="output">
   {#if loading}
     <p class="note">Looking for audio devices…</p>
   {:else if loadError}
@@ -97,7 +97,8 @@
 
 <style>
   .devices { border: 0; margin: 0; padding: 0; display: flex; flex-direction: column; }
-  .device { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) 0; cursor: pointer; }
+  .device { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) var(--space-3); margin: 0 calc(var(--space-3) * -1); border-radius: var(--radius-md); cursor: pointer; transition: background var(--transition); }
+  .device:hover { background: var(--hover); }
   .device input { accent-color: var(--accent); flex: none; }
   .label { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   .hint { font-size: var(--text-xs); color: var(--text-muted); }

@@ -64,6 +64,29 @@ export function contrastFor(rgb: [number, number, number]): string {
   return vsDark >= vsLight ? '#111111' : '#ffffff';
 }
 
+/** Parses `#rgb` / `#rrggbb`; null when invalid. */
+export function parseHex(value: string): [number, number, number] | null {
+  const m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(value.trim());
+  if (!m) return null;
+  let h = m[1] as string;
+  if (h.length === 3) h = [...h].map((c) => c + c).join('');
+  return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16)) as [number, number, number];
+}
+
+/**
+ * Turns a user-chosen colour into a usable accent: lightness is nudged only as
+ * far as needed to read on the theme background (dark: not too dark, light: not
+ * too bright), and a matching text colour is derived. Null for invalid input.
+ */
+export function accentFromHex(value: string, mode: AccentMode = 'dark'): Accent | null {
+  const rgb = parseHex(value);
+  if (!rgb) return null;
+  const [h, s, l] = rgbToHsl(...rgb);
+  const target = mode === 'dark' ? Math.max(l, 0.5) : Math.min(l, 0.46);
+  const out = target === l ? rgb : hslToRgb(h, s, target);
+  return { accent: hex(out), contrast: contrastFor(out) };
+}
+
 const BUCKETS = 12;
 const MIN_SATURATION = 0.28;
 /** Share of opaque pixels that must be colourful, else the cover counts as grey. */

@@ -2,13 +2,11 @@
   import { getApp } from '../../lib/app.svelte';
   import { imageItemId } from '../../lib/jellyfin/models';
   import { httpFetch } from '../../lib/platform';
-  import { loadAccent, type AccentMode } from './accent';
+  import { accentFromHex, loadAccent, type Accent, type AccentMode } from './accent';
 
-  // Renders nothing: applies theme mode and the cover accent to <html>.
+  // Renders nothing: applies theme mode, density, motion and the accent to <html>.
   const app = getApp();
   const root = document.documentElement;
-
-  const FALLBACK = { accent: '', contrast: '' };
 
   // --- theme mode ---------------------------------------------------------
   let systemDark = $state(true);
@@ -23,13 +21,19 @@
 
   const mode = $derived(app.core.settings.current.themeMode);
   const resolved = $derived<AccentMode>(mode === 'system' ? (systemDark ? 'dark' : 'light') : mode);
+  const appearance = $derived(app.core.settings.current.appearance);
 
   $effect(() => {
     root.setAttribute('data-theme', resolved);
   });
+  $effect(() => {
+    root.setAttribute('data-density', appearance.density);
+    root.setAttribute('data-motion', appearance.reduceMotion ? 'reduced' : 'full');
+  });
 
   // --- accent -------------------------------------------------------------
   const coverUrl = $derived.by(() => {
+    if (!appearance.accentFromCover) return null;
     const client = app.core.sessions.client;
     const item = app.core.player.current;
     if (!client || !item) return null;
@@ -39,27 +43,31 @@
     });
   });
 
+  function apply(a: Accent | null) {
+    if (a === null) {
+      root.style.removeProperty('--accent');
+      root.style.removeProperty('--accent-contrast');
+    } else {
+      root.style.setProperty('--accent', a.accent);
+      root.style.setProperty('--accent-contrast', a.contrast);
+    }
+  }
+
   let seq = 0;
   $effect(() => {
     const url = coverUrl;
     const m = resolved;
-    const id = ++seq;
+    const chosen = accentFromHex(appearance.accentColor, m);
+    const id = ++seq; // invalidates any extraction still in flight
     if (url === null) {
-      // Nothing playing: default accent. (While a track loads, the previous one stays.)
-      root.style.removeProperty('--accent');
-      root.style.removeProperty('--accent-contrast');
+      // Cover tinting off or nothing playing: the chosen accent.
+      apply(chosen);
       return;
     }
+    // While a track loads, the previous accent stays.
     void loadAccent(url, (u) => httpFetch(u), m).then((a) => {
       if (id !== seq) return; // stale
-      const next = a ?? FALLBACK;
-      if (next.accent === '') {
-        root.style.removeProperty('--accent');
-        root.style.removeProperty('--accent-contrast');
-      } else {
-        root.style.setProperty('--accent', next.accent);
-        root.style.setProperty('--accent-contrast', next.contrast);
-      }
+      apply(a ?? chosen);
     });
   });
 </script>

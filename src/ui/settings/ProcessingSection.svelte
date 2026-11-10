@@ -31,7 +31,7 @@
   const blockers = $derived(bitPerfectBlockers(dsp, settings.current.maxBitrate));
 </script>
 
-<Section title="Processing">
+<Section title="Processing" id="processing">
   <div class="stack">
     <span>Convolution</span>
     <div class="ir">

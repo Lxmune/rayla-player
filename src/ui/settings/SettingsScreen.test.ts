@@ -138,3 +138,54 @@ describe('SettingsScreen', () => {
     expect(screen.queryByText(/placeholder Application ID/)).toBeNull();
   });
 });
+
+describe('SettingsScreen appearance, behavior and navigation', () => {
+  it('theme, accent, density and toggles write the appearance settings', async () => {
+    const { app, context } = buildApp();
+    render(SettingsScreen, { context });
+    const s = () => app.core.settings.current;
+    await fireEvent.click(screen.getByRole('radio', { name: 'Light' }));
+    expect(s().themeMode).toBe('light');
+    await fireEvent.click(screen.getByRole('radio', { name: 'Compact' }));
+    expect(s().appearance.density).toBe('compact');
+    await fireEvent.click(screen.getByRole('button', { name: 'Mint' }));
+    expect(s().appearance.accentColor).toBe('#6bd6a8');
+    expect(screen.getByRole('button', { name: 'Mint' }).getAttribute('aria-pressed')).toBe('true');
+    await fireEvent.change(screen.getByLabelText('Custom accent colour'), { target: { value: '#112233' } });
+    expect(s().appearance.accentColor).toBe('#112233');
+    await fireEvent.click(screen.getByRole('switch', { name: /Accent colour from cover art/ }));
+    expect(s().appearance.accentFromCover).toBe(false);
+    await fireEvent.click(screen.getByRole('switch', { name: /Art backdrops/ }));
+    expect(s().appearance.artBackdrop).toBe(false);
+    await fireEvent.click(screen.getByRole('switch', { name: /Reduce motion/ }));
+    expect(s().appearance.reduceMotion).toBe(true);
+  });
+
+  it('behavior toggles resume and start screen', async () => {
+    const { app, context } = buildApp();
+    render(SettingsScreen, { context });
+    await fireEvent.click(screen.getByRole('switch', { name: /Resume where I left off/ }));
+    expect(app.core.settings.current.behavior.resumePlayback).toBe(false);
+    await fireEvent.change(screen.getByLabelText(/Start screen/), { target: { value: 'albums' } });
+    expect(app.core.settings.current.behavior.startScreen).toBe('albums');
+  });
+
+  it('search filters sections and the categories list', async () => {
+    const { context } = buildApp();
+    render(SettingsScreen, { context });
+    expect(screen.getByText('Press', { exact: false })).toBeTruthy();
+    await fireEvent.input(screen.getByRole('searchbox', { name: 'Search settings' }), { target: { value: 'dither' } });
+    expect(screen.getByRole('heading', { name: 'Processing' })).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Appearance' })).toBeNull();
+    await fireEvent.input(screen.getByRole('searchbox'), { target: { value: 'zzzz' } });
+    expect(screen.getByText(/No settings match/)).toBeTruthy();
+    await fireEvent.click(screen.getByRole('button', { name: 'Clear search' }));
+    expect(screen.getByRole('heading', { name: 'Appearance' })).toBeTruthy();
+  });
+
+  it('shows the app version in About', () => {
+    const { context } = buildApp();
+    render(SettingsScreen, { context });
+    expect(screen.getByText(/^Version \d/)).toBeTruthy();
+  });
+});

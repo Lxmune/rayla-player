@@ -23,7 +23,7 @@
   }
 </script>
 
-<Section title="Discord Rich Presence">
+<Section title="Discord Rich Presence" id="discord">
   <ToggleRow label="Show what I'm playing" checked={d.enabled} onchange={(v) => patch({ enabled: v })} />
   <TextRow
     label="Application ID"

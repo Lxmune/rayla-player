@@ -40,7 +40,7 @@
   }
 </script>
 
-<Section title="Scrobbling">
+<Section title="Scrobbling" id="scrobbling">
   <p class="note">Jellyfin playback reporting is always on.</p>
 
   <ToggleRow

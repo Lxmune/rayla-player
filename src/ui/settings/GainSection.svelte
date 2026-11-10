@@ -11,7 +11,7 @@
   const db = (v: number) => `${v > 0 ? '+' : ''}${v.toFixed(1)} dB`;
 </script>
 
-<Section title="Volume & gain">
+<Section title="Volume & gain" id="gain">
   <RangeRow
     label="Volume"
     value={dsp.volume * 100}

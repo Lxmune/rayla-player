@@ -29,5 +29,32 @@
 </label>
 
 <style>
-  input { width: 18px; height: 18px; accent-color: var(--accent); flex: none; }
+  input {
+    appearance: none;
+    flex: none;
+    position: relative;
+    width: 40px;
+    height: 24px;
+    margin: 0;
+    border-radius: var(--radius-full);
+    background: var(--surface-3);
+    border: 1px solid var(--border-strong);
+    cursor: pointer;
+    transition: background var(--transition), border-color var(--transition);
+  }
+  input::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--text);
+    box-shadow: var(--shadow-1);
+    transition: transform var(--transition);
+  }
+  input:checked { background: var(--accent); border-color: var(--accent); }
+  input:checked::after { transform: translateX(16px); background: var(--accent-contrast); }
+  input:disabled { opacity: 0.4; cursor: default; }
 </style>
