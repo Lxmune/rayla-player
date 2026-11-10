@@ -2,9 +2,13 @@
   import { artistLine, type BaseItem } from '../../lib/jellyfin/models';
   import Artwork from './Artwork.svelte';
   import { plural } from './format';
+  import { useItemMenu } from './item-menu';
+  import { getUi } from '../shell/router.svelte';
 
   let { item, onclick }: { item: BaseItem; onclick: () => void } = $props();
 
+  const ui = getUi();
+  const menuFor = useItemMenu();
   const round = $derived(item.type === 'MusicArtist');
   const subtitle = $derived.by(() => {
     switch (item.type) {
@@ -18,7 +22,7 @@
   });
 </script>
 
-<button type="button" class="card" class:round {onclick}>
+<button type="button" class="card" class:round {onclick} oncontextmenu={(e) => ui?.openMenu(e, menuFor(item))}>
   <Artwork {item} size={180} {round} fill />
   <span class="title">{item.name}</span>
   {#if subtitle}<span class="sub">{subtitle}</span>{/if}

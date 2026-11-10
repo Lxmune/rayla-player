@@ -5,17 +5,26 @@
   import IconButton from './IconButton.svelte';
   import { formatTime } from './format';
   import { useActions } from './actions';
+  import { useItemMenu } from './item-menu';
+  import { getUi } from '../shell/router.svelte';
 
   let {
     track,
     number,
     showArtist = true,
+    showAlbum = false,
+    playlist,
+    onchanged,
     onplay,
   }: {
     track: BaseItem;
     /** Shown instead of the play glyph (track number / position). */
     number?: number | null;
     showArtist?: boolean;
+    showAlbum?: boolean;
+    /** The playlist this row is shown in (menu offers removal). */
+    playlist?: BaseItem;
+    onchanged?: () => void;
     onplay: () => void;
   } = $props();
 
@@ -25,9 +34,14 @@
   const isCurrent = $derived(player.current?.id === track.id);
   const favorite = $derived(app.core.favorites.isFavorite(track));
   const downloaded = $derived(app.core.downloads.isDownloaded(track.id));
+  const ui = getUi();
+  const menuFor = useItemMenu();
+  function oncontextmenu(e: MouseEvent) {
+    ui?.openMenu(e, menuFor(track, { playlist, onremoved: onchanged }));
+  }
 </script>
 
-<div class="row" class:current={isCurrent}>
+<div class="row" class:current={isCurrent} role="group" aria-label={track.name} {oncontextmenu}>
   <button type="button" class="main" onclick={onplay} aria-label={`Play ${track.name}`}>
     <span class="num">
       {#if isCurrent && player.isPlaying}
