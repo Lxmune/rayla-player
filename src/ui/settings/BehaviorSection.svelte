@@ -10,6 +10,7 @@
 
   const LABELS: Record<StartScreen, string> = {
     home: 'Home',
+    discover: 'Discover',
     albums: 'Albums',
     artists: 'Artists',
     playlists: 'Playlists',

@@ -6,6 +6,7 @@ import type { IconName } from '../common/icons';
 
 export type RootRoute =
   | 'home'
+  | 'discover'
   | 'search'
   | 'artists'
   | 'albums'

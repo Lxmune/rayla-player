@@ -196,3 +196,100 @@ export function rank(
   }
   return out;
 }
+
+// ---- Pure helpers for the Discover page -------------------------------------------------
+
+export interface ArtistSuggestion {
+  artist: BaseItem;
+  /** The top artist the server related it to. */
+  because: string;
+}
+
+/**
+ * Artists related to the user's top artists that they have not played. `lists` pairs each seed
+ * artist's name with the similar artists the server returned. Order follows the seeds, one
+ * artist at most once.
+ */
+export function suggestArtists(
+  taste: Taste,
+  lists: { seed: string; artists: BaseItem[] }[],
+  limit: number,
+): ArtistSuggestion[] {
+  const seen = new Set<string>();
+  const out: ArtistSuggestion[] = [];
+  const queues = lists.map((l) => ({ seed: l.seed, rest: [...l.artists] }));
+  // Round-robin so the first seed does not fill the whole row.
+  for (let progress = true; progress && out.length < limit; ) {
+    progress = false;
+    for (const q of queues) {
+      let a = q.rest.shift();
+      while (a && (a.id === '' || seen.has(a.id) || taste.artists.has(keyOf(a.name)))) a = q.rest.shift();
+      if (!a) continue;
+      progress = true;
+      seen.add(a.id);
+      out.push({ artist: a, because: q.seed });
+      if (out.length >= limit) break;
+    }
+  }
+  return out;
+}
+
+const daysSince = (iso: string | null, now: number): number => {
+  const t = iso === null ? NaN : Date.parse(iso);
+  return Number.isNaN(t) ? Infinity : Math.max(0, (now - t) / DAY_MS);
+};
+
+/** Tracks the user played a lot but not for `days` days, most played first. */
+export function rediscoverTracks(
+  history: BaseItem[],
+  now: number,
+  opts: { limit: number; days?: number; minPlays?: number },
+): BaseItem[] {
+  const days = opts.days ?? 90;
+  const minPlays = opts.minPlays ?? 3;
+  const seen = new Set<string>();
+  return history
+    .filter((t) => {
+      if (t.id === '' || t.type !== 'Audio' || seen.has(t.id)) return false;
+      seen.add(t.id);
+      return t.playCount >= minPlays && daysSince(t.lastPlayed, now) >= days;
+    })
+    .sort((a, b) => b.playCount - a.playCount || a.name.localeCompare(b.name))
+    .slice(0, opts.limit);
+}
+
+/** Favourites the user has not played for `days` days (or ever). */
+export function staleFavourites(items: BaseItem[], now: number, opts: { limit: number; days?: number }): BaseItem[] {
+  const days = opts.days ?? 60;
+  return items.filter((t) => t.id !== '' && t.isFavorite && daysSince(t.lastPlayed, now) >= days).slice(0, opts.limit);
+}
+
+/** Never-played tracks by the user's top artists, at most `perArtist` of each. */
+export function deepCuts(taste: Taste, tracks: BaseItem[], opts: { limit: number; perArtist?: number }): BaseItem[] {
+  const per = opts.perArtist ?? 4;
+  const count = new Map<string, number>();
+  const seen = new Set<string>();
+  const known = tracks
+    .filter((t) => t.id !== '' && t.playCount === 0 && !seen.has(t.id) && seen.add(t.id))
+    .map((t) => {
+      const a = artistsOf(t).map((x) => taste.artists.get(keyOf(x.name))).find(Boolean);
+      return { t, w: a?.weight ?? 0, key: a?.key ?? '' };
+    })
+    .filter((x) => x.w > 0)
+    .sort((a, b) => b.w - a.w);
+  const out: BaseItem[] = [];
+  for (const x of known) {
+    const n = count.get(x.key) ?? 0;
+    if (n >= per) continue;
+    count.set(x.key, n + 1);
+    out.push(x.t);
+    if (out.length >= opts.limit) break;
+  }
+  return out;
+}
+
+/** Recently added albums that match the taste and were never played. Keeps the incoming recency as a tie-break. */
+export function newInTaste(taste: Taste, albums: BaseItem[], opts: { limit: number; exclude?: Set<string> }): Scored[] {
+  const fresh = albums.filter((a) => (taste.albumPlays.get(a.id) ?? 0) === 0 && a.playCount === 0);
+  return rank(taste, fresh, { limit: opts.limit, exclude: opts.exclude });
+}

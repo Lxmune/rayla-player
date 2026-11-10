@@ -59,6 +59,20 @@ describe('Router', () => {
   });
 });
 
+describe('Router discover', () => {
+  it('is a root section that Back returns from to Home', () => {
+    const r = new Router('discover');
+    expect(r.current.name).toBe('discover');
+    expect(r.section).toBe('discover');
+    expect(r.depth).toBe(1);
+    r.up();
+    expect(r.current.name).toBe('home');
+    r.go('discover');
+    r.open({ id: 'a', name: 'A', type: 'MusicArtist' } as never);
+    expect(r.section).toBe('discover');
+  });
+});
+
 describe('Router.lastNav', () => {
   it('tracks the kind of navigation', () => {
     const r = new Router('home');

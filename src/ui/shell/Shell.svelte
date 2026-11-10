@@ -9,6 +9,7 @@
   import ArtistScreen from '../browse/ArtistScreen.svelte';
   import ArtistsScreen from '../browse/ArtistsScreen.svelte';
   import HomeScreen from '../browse/HomeScreen.svelte';
+  import DiscoverScreen from '../browse/DiscoverScreen.svelte';
   import PlaylistScreen from '../browse/PlaylistScreen.svelte';
   import PlaylistsScreen from '../browse/PlaylistsScreen.svelte';
   import SearchScreen from '../browse/SearchScreen.svelte';
@@ -129,7 +130,7 @@
   }
 
   // Pull to refresh (phone root screens): remounts the page so it refetches.
-  const PULL_ROUTES = ['home', 'albums', 'artists', 'songs', 'playlists', 'genres', 'favorites', 'downloads'];
+  const PULL_ROUTES = ['home', 'discover', 'albums', 'artists', 'songs', 'playlists', 'genres', 'favorites', 'downloads'];
   const canPull = $derived(phone && PULL_ROUTES.includes(route.name));
   let pull = $state(0);
   let pulling = $state(false);
@@ -297,7 +298,9 @@
           {#key route}{#key refreshKey}
             <div class="page nav-{router.lastNav}" style:transform={pull > 0 ? `translateY(${pull * 0.5}px)` : undefined}
               class:released={!pulling}>
-        {#if route.name === 'home'}
+        {#if route.name === 'discover'}
+          <DiscoverScreen />
+        {:else if route.name === 'home'}
           <HomeScreen />
         {:else if route.name === 'artists'}
           <ArtistsScreen />

@@ -19,6 +19,7 @@
   /** Section chips shown under the phone top bar. */
   const CHIPS: { id: RootRoute; label: string }[] = [
     { id: 'home', label: 'Home' },
+    { id: 'discover', label: 'Discover' },
     { id: 'albums', label: 'Albums' },
     { id: 'artists', label: 'Artists' },
     { id: 'songs', label: 'Songs' },
@@ -28,6 +29,7 @@
     { id: 'downloads', label: 'Downloads' },
   ];
   const TITLES: Partial<Record<RootRoute, string>> = {
+    discover: 'Discover',
     settings: 'Settings',
     downloads: 'Downloads',
     albums: 'Albums',

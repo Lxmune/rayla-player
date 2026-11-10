@@ -20,6 +20,7 @@
   }
   const LIBRARY: NavItem[] = [
     { id: 'home', label: 'Home', icon: 'home' },
+    { id: 'discover', label: 'Discover', icon: 'sparkle' },
     { id: 'search', label: 'Search', icon: 'search' },
     { id: 'artists', label: 'Artists', icon: 'artist' },
     { id: 'albums', label: 'Albums', icon: 'album' },

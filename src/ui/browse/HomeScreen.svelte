@@ -61,9 +61,6 @@
   const quick = $derived((hasData(played) ? played.data : added.data)?.slice(0, 6) ?? []);
   const topTracks = $derived(mostPlayed.data ?? []);
   const fy = $derived(recs.data);
-  const mixLine = $derived(
-    fy ? `${fy.mix.length} tracks you haven't played${fy.topGenres.length ? ` · ${fy.topGenres.slice(0, 2).join(', ')}` : ''}` : '',
-  );
   const half = $derived(Math.ceil(topTracks.length / 2));
   const allEmpty = $derived(
     [played, added, mostPlayed, rediscover, favorites, playlists].every((r) => !r.loading && !hasData(r)),
@@ -99,19 +96,13 @@
     </div>
   {/if}
 
-  {#if fy && fy.mix.length > 0}
-    <button type="button" class="mix" onclick={() => void act.playTracks(fy.mix, 0)}>
-      <span class="mix-icon" aria-hidden="true"><Icon name="sparkle" size={22} /></span>
-      <span class="mix-text">
-        <span class="mix-title">Discover mix</span>
-        <span class="mix-sub">{mixLine}</span>
-      </span>
-      <span class="mix-play" aria-hidden="true"><Icon name="play" size={18} /></span>
-    </button>
-  {/if}
-
   {#if fy && fy.albums.length > 0}
-    <Shelf title="Recommended for you" subtitle="Based on what you listen to" items={fy.albums.map((s) => s.item)} />
+    <Shelf
+      title="Recommended for you"
+      subtitle="Based on what you listen to"
+      items={fy.albums.map((s) => s.item)}
+      onseeall={() => router.go('discover')}
+    />
   {/if}
 
   {#if visible(played)}
@@ -144,10 +135,6 @@
       </div>
     </section>
   {/if}
-
-  {#each fy?.byGenre ?? [] as shelf (shelf.genre)}
-    <Shelf title="Because you like {shelf.genre}" items={shelf.albums.map((s) => s.item)} />
-  {/each}
 
   {#if visible(rediscover)}
     <Shelf
@@ -269,60 +256,6 @@
   }
   .top {
     margin-top: var(--space-6);
-  }
-  .mix {
-    display: flex;
-    align-items: center;
-    gap: var(--space-3);
-    width: 100%;
-    margin-top: var(--space-4);
-    padding: var(--space-3) var(--space-4);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
-    background: linear-gradient(120deg, var(--accent-soft), var(--surface) 70%);
-    color: inherit;
-    text-align: left;
-    cursor: pointer;
-    transition: background var(--transition), transform var(--duration-fast) var(--ease-out);
-  }
-  .mix:active {
-    transform: scale(0.98);
-  }
-  .mix-icon {
-    display: grid;
-    place-items: center;
-    flex: none;
-    width: 44px;
-    height: 44px;
-    border-radius: var(--radius-md);
-    background: var(--accent-soft);
-    color: var(--accent);
-  }
-  .mix-text {
-    display: flex;
-    flex-direction: column;
-    flex: 1;
-    min-width: 0;
-  }
-  .mix-title {
-    font-weight: var(--weight-semibold);
-  }
-  .mix-sub {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: var(--text-sm);
-    color: var(--text-muted);
-  }
-  .mix-play {
-    display: grid;
-    place-items: center;
-    flex: none;
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
-    background: var(--accent);
-    color: var(--accent-contrast);
   }
   .two-col {
     display: grid;

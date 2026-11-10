@@ -5,6 +5,7 @@ import { flush, trackJson } from '../../lib/test-support';
 import AddToPlaylistSheet from '../sheets/AddToPlaylistSheet.svelte';
 import { signedIn, withContext } from '../testing';
 import AlbumScreen from './AlbumScreen.svelte';
+import DiscoverScreen from './DiscoverScreen.svelte';
 import HomeScreen from './HomeScreen.svelte';
 import SearchScreen from './SearchScreen.svelte';
 
@@ -31,6 +32,30 @@ describe('HomeScreen', () => {
     await screen.findByText(/library looks empty/);
     expect(screen.queryByRole('heading', { name: 'Recently added' })).toBeNull();
     expect(screen.queryByRole('heading', { name: 'Most played' })).toBeNull();
+  });
+});
+
+describe('DiscoverScreen', () => {
+  it('asks for more listening when there is no history', async () => {
+    const { app } = await signedIn({ 'GET /Items': items() });
+    render(DiscoverScreen, { context: withContext(app).context });
+    await screen.findByText(/Play more music to get recommendations/);
+    expect(screen.getByRole('heading', { name: 'Discover' })).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Recommended albums' })).toBeNull();
+  });
+
+  it('shows recommendation sections built from history and hides empty ones', async () => {
+    const played = Array.from({ length: 6 }, (_, i) => ({
+      ...trackJson(`h${i}`, `Hit ${i}`),
+      GenreItems: [{ Id: 'g1', Name: 'Metal' }],
+      ArtistItems: [{ Id: 'ar1', Name: 'Artist' }],
+      UserData: { PlayCount: 10, LastPlayedDate: '2020-01-01T00:00:00Z' },
+    }));
+    const { app } = await signedIn({ 'GET /Items': items(...played) });
+    render(DiscoverScreen, { context: withContext(app).context });
+    await screen.findByRole('heading', { name: 'Rediscover' });
+    expect(screen.queryByRole('heading', { name: 'Deep cuts' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Refresh recommendations' })).toBeTruthy();
   });
 });
 
