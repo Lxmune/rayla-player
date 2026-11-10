@@ -80,10 +80,8 @@
   .tabs {
     display: grid;
     grid-template-columns: repeat(5, 1fr);
-    padding: var(--space-1) var(--space-1) calc(var(--space-1) + env(safe-area-inset-bottom, 0px));
-    background: var(--glass);
-    backdrop-filter: blur(24px) saturate(1.4);
-    border-top: 1px solid var(--glass-border);
+    padding: 0 var(--space-1) env(safe-area-inset-bottom, 0px);
+    background: var(--bg);
   }
   .tab {
     display: flex;
@@ -101,6 +99,9 @@
     -webkit-tap-highlight-color: transparent;
   }
   .tab.on {
+    color: var(--text);
+  }
+  .tab.on :global(svg) {
     color: var(--accent);
   }
 </style>

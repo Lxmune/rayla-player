@@ -19,6 +19,8 @@
   const menuFor = useItemMenu();
   const item = $derived(app.core.player.current);
   const favorite = $derived(item ? app.core.favorites.isFavorite(item) : false);
+  const player = app.core.player;
+  const progress = $derived(player.durationMs > 0 ? Math.min(1, player.positionMs / player.durationMs) : 0);
 
   const openNowPlaying = () => (ui.nowPlayingOpen = true);
   function openLyrics() {
@@ -35,7 +37,8 @@
   }
 </script>
 
-<footer class="bar" aria-label="Player">
+<footer class="bar" class:empty={!item} aria-label="Player">
+  <span class="mini-progress" style:transform="scaleX({progress})" aria-hidden="true"></span>
   <div class="now" {oncontextmenu} role="presentation">
     {#if item}
       <button type="button" class="art" aria-label="Open now playing" onclick={openNowPlaying}>
@@ -179,7 +182,10 @@
       display: none;
     }
   }
-  @media (max-width: 720px) {
+  .mini-progress {
+    display: none;
+  }
+  @media (max-width: 720px) and (min-width: 641px) {
     .bar {
       grid-template-columns: 1fr;
       gap: var(--space-1);
@@ -188,6 +194,50 @@
     }
     .right {
       display: none;
+    }
+  }
+  /* Phone: a one-row mini player docked on the tab bar; tap it for now playing. */
+  @media (max-width: 640px) {
+    .bar {
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: var(--space-2);
+      height: 64px;
+      padding: 0 var(--space-2) 0 var(--space-3);
+      border-top: 0;
+      background: color-mix(in srgb, var(--accent) 14%, var(--surface-2));
+      backdrop-filter: none;
+    }
+    .bar.empty {
+      display: none;
+    }
+    .art :global(.art) {
+      width: 44px !important;
+      height: 44px !important;
+    }
+    .now :global(.icon-btn),
+    .right,
+    .center :global(.seek),
+    .center :global([aria-label='Previous']),
+    .center :global([aria-label='Shuffle']),
+    .center :global([aria-label^='Repeat']) {
+      display: none;
+    }
+    .center {
+      width: auto;
+    }
+    .title:hover,
+    .artist:hover {
+      text-decoration: none;
+    }
+    .mini-progress {
+      display: block;
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 2px;
+      background: var(--accent);
+      transform-origin: left;
     }
   }
 </style>

@@ -31,6 +31,7 @@
     position: fixed;
     left: 50%;
     bottom: calc(var(--playerbar-height) + var(--space-4));
+    max-width: calc(100vw - 2 * var(--space-4));
     transform: translateX(-50%);
     z-index: var(--z-toast);
     display: flex;
@@ -64,5 +65,11 @@
     color: var(--accent);
     font-weight: var(--weight-semibold);
     cursor: pointer;
+  }
+  @media (max-width: 640px) {
+    /* Above the mini player (64px) and the tab bar (52px). */
+    .toasts {
+      bottom: calc(116px + var(--space-3));
+    }
   }
 </style>
