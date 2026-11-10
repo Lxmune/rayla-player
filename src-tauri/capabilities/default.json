@@ -15,6 +15,7 @@
       ]
     },
     "websocket:default",
-    "dialog:allow-open"
+    "dialog:allow-open",
+    "rayla-android:default"
   ]
 }

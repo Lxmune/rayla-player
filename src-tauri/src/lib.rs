@@ -169,6 +169,7 @@ pub fn run() {
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_websocket::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_rayla_android::init())
         .setup(|app| {
             let engine_init_error = app
                 .path()

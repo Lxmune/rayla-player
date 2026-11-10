@@ -67,7 +67,7 @@ impl Sample {
 struct Stream(NonNull<ffi::AAudioStream>);
 
 impl Stream {
-    fn open(want: Format, exclusive: bool, sample: Sample) -> Result<Stream> {
+    fn open(device: Option<i32>, want: Format, exclusive: bool, sample: Sample) -> Result<Stream> {
         let mut builder: *mut ffi::AAudioStreamBuilder = ptr::null_mut();
         // SAFETY: plain AAudio C calls; the builder is deleted on every path.
         unsafe {
@@ -77,6 +77,9 @@ impl Stream {
             } else {
                 ffi::AAUDIO_SHARING_MODE_SHARED
             };
+            if let Some(id) = device {
+                ffi::AAudioStreamBuilder_setDeviceId(builder, id);
+            }
             ffi::AAudioStreamBuilder_setDirection(builder, ffi::AAUDIO_DIRECTION_OUTPUT as i32);
             ffi::AAudioStreamBuilder_setSharingMode(builder, sharing as i32);
             ffi::AAudioStreamBuilder_setPerformanceMode(builder, ffi::AAUDIO_PERFORMANCE_MODE_NONE as i32);
@@ -124,7 +127,9 @@ impl Backend for AAudioBackend {
         }])
     }
 
-    fn open(&self, _device: Option<&str>, exclusive: bool, want: Format) -> Result<Box<dyn Output>> {
+    fn open(&self, device: Option<&str>, exclusive: bool, want: Format) -> Result<Box<dyn Output>> {
+        // An unparsable id means default routing.
+        let device_id: Option<i32> = device.and_then(|s| s.trim().parse().ok());
         let order: &[Sample] = if want.bits <= 16 {
             &[Sample::I16, Sample::F32]
         } else {
@@ -134,7 +139,7 @@ impl Backend for AAudioBackend {
         let mut last = anyhow!("no output format accepted");
         for &excl in modes {
             for &sample in order {
-                let stream = match Stream::open(want, excl, sample) {
+                let stream = match Stream::open(device_id, want, excl, sample) {
                     Ok(s) => s,
                     Err(e) => {
                         last = e;

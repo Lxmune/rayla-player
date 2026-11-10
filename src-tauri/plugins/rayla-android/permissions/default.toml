@@ -1,0 +1,9 @@
+[default]
+description = "Media notification, media actions and audio outputs on Android (no-ops elsewhere)."
+permissions = [
+  "allow-update-now-playing",
+  "allow-clear-now-playing",
+  "allow-list-audio-outputs",
+  "allow-register-listener",
+  "allow-remove-listener",
+]

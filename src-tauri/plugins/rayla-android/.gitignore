@@ -1,0 +1,4 @@
+/android/build/
+/android/.gradle/
+# Copied in by the tauri build for IDE support.
+/android/.tauri/

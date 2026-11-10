@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/dsp", "crates/engine", "src-tauri"]
+members = ["crates/dsp", "crates/engine", "src-tauri", "src-tauri/plugins/rayla-android"]
 
 # The resampler and convolver tests are slow without optimisation.
 [profile.test]
