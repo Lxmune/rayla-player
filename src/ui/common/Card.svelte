@@ -254,9 +254,9 @@
     }
   }
   @media (hover: none) {
+    /* No content-visibility on cards: in a horizontal shelf the off-screen cards would
+       take the placeholder height and stretch the whole row (gaps under every shelf). */
     .card {
-      content-visibility: auto;
-      contain-intrinsic-size: auto 240px;
       -webkit-user-select: none;
       user-select: none;
       -webkit-touch-callout: none;
