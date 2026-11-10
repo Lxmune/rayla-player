@@ -44,9 +44,14 @@
       border-color var(--transition),
       transform var(--duration-fast) var(--ease-out);
   }
-  .btn:hover:not(:disabled) {
-    background: var(--hover);
-    border-color: var(--text-faint);
+  .btn {
+    -webkit-tap-highlight-color: transparent;
+  }
+  @media (hover: hover) {
+    .btn:hover:not(:disabled) {
+      background: var(--hover);
+      border-color: var(--text-faint);
+    }
   }
   .btn:active:not(:disabled) {
     transform: scale(0.97);
@@ -60,10 +65,21 @@
       color var(--accent-transition),
       transform var(--duration-fast) var(--ease-out);
   }
-  .btn.primary:hover:not(:disabled) {
-    background: var(--accent);
-    border-color: var(--accent);
-    filter: brightness(1.08);
+  @media (hover: hover) {
+    .btn.primary:hover:not(:disabled) {
+      background: var(--accent);
+      border-color: var(--accent);
+      filter: brightness(1.08);
+    }
+  }
+  @media (hover: none) {
+    .btn:active:not(:disabled) {
+      background: var(--active);
+    }
+    .btn.primary:active:not(:disabled) {
+      background: var(--accent);
+      filter: brightness(1.1);
+    }
   }
   .btn:disabled {
     opacity: 0.4;

@@ -2,6 +2,7 @@
   import { tick } from 'svelte';
   import { getUi } from '../shell/router.svelte';
   import Icon from './Icon.svelte';
+  import { isPhone, sheetDrag } from './touch';
 
   // Renders `ui.menu` (opened with ui.openMenu). Placed once by the shell.
   const ui = getUi();
@@ -9,14 +10,18 @@
 
   let el: HTMLDivElement | undefined = $state();
   let pos = $state({ x: 0, y: 0 });
+  /** Phone: render as a bottom sheet instead of a popover. Decided when the menu opens. */
+  let phone = $state(false);
 
   // Clamp inside the viewport once the size is known, then focus the first item.
   $effect(() => {
     const m = menu;
     if (!m) return;
     pos = { x: m.x, y: m.y };
+    phone = isPhone();
     void tick().then(() => {
       if (!el) return;
+      if (phone) return;
       const r = el.getBoundingClientRect();
       const vw = window.innerWidth;
       const vh = window.innerHeight;
@@ -75,18 +80,23 @@
 <svelte:window {onpointerdown} onblur={close} onresize={close} />
 
 {#if menu}
+  {#if phone}<div class="scrim" aria-hidden="true"></div>{/if}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="menu"
+    class:sheet={phone}
     role="menu"
     tabindex="-1"
     aria-label="Actions"
     bind:this={el}
-    style:left={`${pos.x}px`}
-    style:top={`${pos.y}px`}
+    style:left={phone ? undefined : `${pos.x}px`}
+    style:top={phone ? undefined : `${pos.y}px`}
     {onkeydown}
     oncontextmenu={(e) => e.preventDefault()}
   >
+    {#if phone}
+      <div class="grab" use:sheetDrag={{ target: () => el, onclose: close }}><span></span></div>
+    {/if}
     {#each menu.entries as entry, i (i)}
       {#if entry === 'separator'}
         <div class="sep" role="separator"></div>
@@ -127,7 +137,70 @@
     animation: scale-in var(--duration-fast) var(--ease-out);
     transform-origin: top left;
   }
+  .scrim {
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-menu);
+    background: var(--scrim);
+    animation: tmenu-fade 200ms ease-out;
+  }
+  .menu.sheet {
+    inset: auto 0 0 0;
+    min-width: 0;
+    max-width: none;
+    max-height: 80dvh;
+    padding: 0 var(--space-2) calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
+    border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+    border-bottom: 0;
+    background: var(--surface);
+    overscroll-behavior: contain;
+    transform-origin: bottom center;
+    animation: tmenu-up 280ms var(--ease-out);
+  }
+  .grab {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    display: flex;
+    justify-content: center;
+    padding: var(--space-3) 0 var(--space-2);
+    margin: 0 calc(var(--space-2) * -1);
+    background: var(--surface);
+    touch-action: none;
+    cursor: grab;
+  }
+  .grab span {
+    width: 36px;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--text-faint);
+    opacity: 0.6;
+  }
+  .sheet button {
+    min-height: 52px;
+    padding: 0 var(--space-4);
+    gap: var(--space-4);
+    font-size: var(--text-md);
+    border-radius: var(--radius-md);
+  }
+  .sheet .icon {
+    width: 22px;
+  }
+  .sheet .sep {
+    margin: var(--space-1) var(--space-4);
+  }
+  @keyframes tmenu-up {
+    from {
+      transform: translateY(100%);
+    }
+  }
+  @keyframes tmenu-fade {
+    from {
+      opacity: 0;
+    }
+  }
   button {
+    -webkit-tap-highlight-color: transparent;
     display: flex;
     align-items: center;
     gap: var(--space-3);
@@ -140,10 +213,27 @@
     font-size: var(--text-sm);
     cursor: pointer;
   }
-  button:hover:not(:disabled),
   button:focus-visible {
     background: var(--active);
     outline: none;
+  }
+  @media (hover: hover) {
+    button:hover:not(:disabled) {
+      background: var(--active);
+    }
+  }
+  button:active:not(:disabled) {
+    background: var(--active);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .menu.sheet,
+    .scrim {
+      animation: none;
+    }
+  }
+  :global(:root[data-motion='reduced']) .menu.sheet,
+  :global(:root[data-motion='reduced']) .scrim {
+    animation: none;
   }
   button:disabled {
     opacity: 0.4;

@@ -183,9 +183,19 @@
     border-radius: var(--radius-sm);
     transition: background var(--duration-fast);
   }
-  .row:hover,
-  .row:focus-within {
+  .row {
+    -webkit-tap-highlight-color: transparent;
+  }
+  .row:has(:focus-visible) {
     background: var(--hover);
+  }
+  @media (hover: hover) {
+    .row:hover {
+      background: var(--hover);
+    }
+  }
+  .row:active {
+    background: var(--active);
   }
   .open {
     flex: 1;
@@ -231,9 +241,18 @@
     opacity: 0;
     transition: opacity var(--transition);
   }
-  .row:hover .acts,
-  .row:focus-within .acts {
+  .row:has(:focus-visible) .acts {
     opacity: 1;
+  }
+  @media (hover: hover) {
+    .row:hover .acts {
+      opacity: 1;
+    }
+  }
+  @media (hover: none) {
+    .acts {
+      opacity: 1;
+    }
   }
   @media (prefers-reduced-motion: reduce) {
     .loading {

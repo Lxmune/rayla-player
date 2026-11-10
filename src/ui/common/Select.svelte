@@ -45,7 +45,15 @@
     cursor: pointer;
     transition: border-color var(--transition);
   }
-  select:hover {
+  select {
+    -webkit-tap-highlight-color: transparent;
+  }
+  @media (hover: hover) {
+    select:hover {
+      border-color: var(--border-strong);
+    }
+  }
+  select:active {
     border-color: var(--border-strong);
   }
   .chev {

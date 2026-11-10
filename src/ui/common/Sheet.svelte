@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
   import IconButton from './IconButton.svelte';
+  import { isPhone, sheetDrag } from './touch';
 
   let {
     title,
@@ -49,10 +50,13 @@
 <div class="overlay">
   <button type="button" class="scrim" aria-label="Close" tabindex="-1" onclick={onclose}></button>
   <div class="sheet" role="dialog" aria-modal="true" aria-labelledby={titleId} bind:this={dialog}>
-    <header>
-      <h2 id={titleId}>{title}</h2>
-      <IconButton icon="close" label="Close dialog" onclick={onclose} />
-    </header>
+    <div class="drag" use:sheetDrag={{ target: () => dialog, onclose, enabled: isPhone }}>
+      <div class="grab" aria-hidden="true"><span></span></div>
+      <header>
+        <h2 id={titleId}>{title}</h2>
+        <IconButton icon="close" label="Close dialog" onclick={onclose} />
+      </header>
+    </div>
     <div class="body">{@render children()}</div>
   </div>
 </div>
@@ -89,6 +93,9 @@
     overflow: hidden;
     animation: scale-in var(--duration) var(--ease-out);
   }
+  .grab {
+    display: none;
+  }
   header {
     display: flex;
     align-items: center;
@@ -107,5 +114,66 @@
   .body {
     padding: var(--space-4) var(--space-5) var(--space-5);
     overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  /* Phone: bottom sheet. Only the handle / header drags, so the body keeps scrolling. */
+  @media (max-width: 640px) {
+    .overlay {
+      align-items: flex-end;
+      padding: 0;
+    }
+    .sheet {
+      width: 100%;
+      max-height: 90vh;
+      max-height: 90dvh;
+      border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+      border-bottom: 0;
+      animation: tsheet-up 300ms var(--ease-out);
+    }
+    .scrim {
+      animation: tsheet-fade 240ms ease-out;
+    }
+    .drag {
+      touch-action: none;
+    }
+    .grab {
+      display: flex;
+      justify-content: center;
+      padding: var(--space-2) 0 0;
+      background: var(--glass);
+    }
+    .grab span {
+      width: 36px;
+      height: 4px;
+      border-radius: 2px;
+      background: var(--text-faint);
+      opacity: 0.6;
+    }
+    header {
+      border-bottom: 0;
+    }
+    .body {
+      padding-bottom: calc(var(--space-5) + env(safe-area-inset-bottom, 0px));
+    }
+  }
+  @keyframes tsheet-up {
+    from {
+      transform: translateY(100%);
+    }
+  }
+  @keyframes tsheet-fade {
+    from {
+      opacity: 0;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .sheet,
+    .scrim {
+      animation: none;
+    }
+  }
+  :global(:root[data-motion='reduced']) .sheet,
+  :global(:root[data-motion='reduced']) .scrim {
+    animation: none;
   }
 </style>

@@ -72,7 +72,7 @@
       {/if}
     </div>
   </header>
-  <div class="row" bind:this={scroller} onscroll={measure}>
+  <div class="row" class:at-start={atStart} class:at-end={atEnd} bind:this={scroller} onscroll={measure}>
     {#if loading}
       {#each { length: 6 } as _, i (i)}
         <div class="cell skeleton-card" aria-hidden="true">
@@ -130,9 +130,18 @@
     cursor: pointer;
     transition: color var(--transition), background var(--transition);
   }
-  .see-all:hover {
+  @media (hover: hover) {
+    .see-all:hover {
+      color: var(--text);
+      background: var(--hover);
+    }
+  }
+  .see-all {
+    -webkit-tap-highlight-color: transparent;
+  }
+  .see-all:active {
     color: var(--text);
-    background: var(--hover);
+    background: var(--active);
   }
   .see-all:focus-visible {
     outline: 2px solid var(--accent);
@@ -147,6 +156,42 @@
     margin-inline: calc(var(--space-2) * -1);
     padding-inline: var(--space-2);
     padding-bottom: var(--space-2);
+  }
+  /* Soft edge fade where more cards are hidden. */
+  .row {
+    --fade-l: 0px;
+    --fade-r: 0px;
+    mask-image: linear-gradient(
+      to right,
+      transparent 0,
+      #000 var(--fade-l),
+      #000 calc(100% - var(--fade-r)),
+      transparent 100%
+    );
+    -webkit-mask-image: linear-gradient(
+      to right,
+      transparent 0,
+      #000 var(--fade-l),
+      #000 calc(100% - var(--fade-r)),
+      transparent 100%
+    );
+  }
+  .row:not(.at-start) {
+    --fade-l: 20px;
+  }
+  .row:not(.at-end) {
+    --fade-r: 20px;
+  }
+  @media (hover: none), (max-width: 640px) {
+    .row {
+      scroll-snap-type: x mandatory;
+      scroll-padding-inline: var(--space-2);
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior-x: contain;
+    }
+    .cell {
+      scroll-snap-stop: normal;
+    }
   }
   .row::-webkit-scrollbar {
     display: none;

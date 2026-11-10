@@ -8,6 +8,7 @@
   import { useActions } from './actions';
   import { useItemMenu } from './item-menu';
   import { getRouter, getUi } from '../shell/router.svelte';
+  import { longPress, swipeActions } from './touch';
 
   let {
     track,
@@ -57,6 +58,16 @@
   }
 </script>
 
+<div
+  class="swipe"
+  use:longPress={{ onlongpress: (at) => ui?.openMenu(at, menu()) }}
+  use:swipeActions={{
+    onright: () => void actions.playNext([track]),
+    onleft: () => void actions.addToQueue([track]),
+  }}
+>
+  <div class="reveal right" aria-hidden="true"><Icon name="playNext" size={22} /><span>Play next</span></div>
+  <div class="reveal left" aria-hidden="true"><span>Add to queue</span><Icon name="queue" size={22} /></div>
 <div
   class="row"
   class:current={isCurrent}
@@ -115,9 +126,50 @@
     />
   </span>
 </div>
+</div>
 
 <style>
+  .swipe {
+    position: relative;
+    touch-action: pan-y;
+    -webkit-tap-highlight-color: transparent;
+    border-radius: var(--radius-sm);
+  }
+  .reveal {
+    position: absolute;
+    inset: 0;
+    display: none;
+    align-items: center;
+    gap: var(--space-2);
+    padding: 0 var(--space-5);
+    border-radius: var(--radius-sm);
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-size: var(--text-sm);
+    font-weight: var(--weight-semibold);
+    transition: background 120ms linear, color 120ms linear;
+  }
+  .reveal.left {
+    justify-content: flex-end;
+  }
+  .swipe:global([data-swipe='right']) .reveal.right,
+  .swipe:global([data-swipe='left']) .reveal.left {
+    display: flex;
+  }
+  .swipe:global([data-armed]) .reveal {
+    background: var(--accent);
+    color: var(--accent-contrast);
+  }
+  .swipe:global([data-swiping]) .row {
+    background: var(--bg);
+    transform: translateX(var(--swipe-x, 0px));
+    transition: none;
+  }
+  .swipe:global([data-swiping][data-settling]) .row {
+    transition: transform 320ms var(--ease-spring);
+  }
   .row {
+    position: relative;
     display: flex;
     align-items: center;
     gap: var(--space-2);
@@ -126,9 +178,13 @@
     border-radius: var(--radius-sm);
     transition: background var(--duration-fast);
   }
-  .row:hover,
-  .row:focus-within {
+  .row:has(:focus-visible) {
     background: var(--hover);
+  }
+  @media (hover: hover) {
+    .row:hover {
+      background: var(--hover);
+    }
   }
   .main {
     flex: 1;
@@ -160,15 +216,21 @@
     display: none;
     color: var(--text);
   }
-  .row:hover .p,
   .main:focus-visible .p {
     display: inline-flex;
   }
-  .row:hover .n,
-  .row:hover .eq,
   .main:focus-visible .n,
   .main:focus-visible .eq {
     visibility: hidden;
+  }
+  @media (hover: hover) {
+    .row:hover .p {
+      display: inline-flex;
+    }
+    .row:hover .n,
+    .row:hover .eq {
+      visibility: hidden;
+    }
   }
   .eq {
     display: inline-flex;
@@ -243,9 +305,13 @@
     opacity: 0;
     transition: opacity var(--transition);
   }
-  .row:hover .extras,
-  .row:focus-within .extras {
+  .row:has(:focus-visible) .extras {
     opacity: 1;
+  }
+  @media (hover: hover) {
+    .row:hover .extras {
+      opacity: 1;
+    }
   }
   .dl {
     display: inline-flex;
@@ -260,9 +326,13 @@
     transition: opacity var(--transition);
   }
   .fav.on,
-  .row:hover .fav,
-  .row:focus-within .fav {
+  .row:has(:focus-visible) .fav {
     opacity: 1;
+  }
+  @media (hover: hover) {
+    .row:hover .fav {
+      opacity: 1;
+    }
   }
   .time {
     flex: none;
@@ -277,14 +347,27 @@
     opacity: 0;
     transition: opacity var(--transition);
   }
-  .row:hover .more,
-  .row:focus-within .more {
+  .row:has(:focus-visible) .more {
     opacity: 1;
+  }
+  @media (hover: hover) {
+    .row:hover .more {
+      opacity: 1;
+    }
   }
   @media (hover: none) {
     .more,
     .fav {
       opacity: 1;
+    }
+    .row {
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-touch-callout: none;
+    }
+    .row:active {
+      background: var(--active);
+      transition: background 100ms linear;
     }
   }
   @media (max-width: 900px) {
@@ -302,5 +385,13 @@
       animation: none;
       transform: scaleY(0.7);
     }
+    .swipe:global([data-swiping][data-settling]) .row,
+    .reveal {
+      transition: none;
+    }
+  }
+  :global(:root[data-motion='reduced']) .swipe:global([data-swiping][data-settling]) .row,
+  :global(:root[data-motion='reduced']) .reveal {
+    transition: none;
   }
 </style>

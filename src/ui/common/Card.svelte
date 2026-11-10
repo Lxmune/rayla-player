@@ -7,6 +7,7 @@
   import Icon from './Icon.svelte';
   import { useItemMenu } from './item-menu';
   import { getUi } from '../shell/router.svelte';
+  import { longPress, reveal } from './touch';
 
   let { item, onclick }: { item: BaseItem; onclick: () => void } = $props();
 
@@ -39,7 +40,15 @@
   });
 </script>
 
-<div class="card" class:round class:now-playing={nowPlaying} oncontextmenu={(e) => ui?.openMenu(e, menuFor(item))} role="presentation">
+<div
+  class="card"
+  class:round
+  class:now-playing={nowPlaying}
+  oncontextmenu={(e) => ui?.openMenu(e, menuFor(item))}
+  role="presentation"
+  use:longPress={{ onlongpress: (at) => ui?.openMenu(at, menuFor(item)) }}
+  use:reveal
+>
   <div class="cover">
     {#if genre}
       <div class="tile" style:background={nameGradient(item.name)} aria-hidden="true">
@@ -94,10 +103,17 @@
       background var(--transition),
       transform var(--duration) var(--ease-out);
   }
-  .card:hover,
-  .card:focus-within {
+  .card {
+    -webkit-tap-highlight-color: transparent;
+  }
+  .card:has(:focus-visible) {
     background: var(--surface);
-    transform: translateY(-2px);
+  }
+  @media (hover: hover) {
+    .card:hover {
+      background: var(--surface);
+      transform: translateY(-2px);
+    }
   }
   .cover {
     position: relative;
@@ -108,8 +124,12 @@
   .round .cover {
     border-radius: 50%;
   }
-  .card:hover .cover,
-  .card:focus-within .cover {
+  @media (hover: hover) {
+    .card:hover .cover {
+      box-shadow: var(--shadow-2);
+    }
+  }
+  .card:has(:focus-visible) .cover {
     box-shadow: var(--shadow-2);
   }
   .art {
@@ -209,22 +229,43 @@
   .more:hover {
     background: var(--surface-3);
   }
-  .card:hover .play,
-  .card:focus-within .play,
-  .card:hover .more,
-  .card:focus-within .more {
+  .card:has(:focus-visible) .play,
+  .card:has(:focus-visible) .more {
     opacity: 1;
     transform: none;
   }
-  .play:hover {
-    transform: scale(1.07) !important;
-    filter: brightness(1.08);
+  @media (hover: hover) {
+    .card:hover .play,
+    .card:hover .more {
+      opacity: 1;
+      transform: none;
+    }
+    .play:hover {
+      transform: scale(1.07) !important;
+      filter: brightness(1.08);
+    }
   }
   @media (hover: none) {
+    .card {
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-touch-callout: none;
+    }
     .play,
     .more {
       opacity: 1;
       transform: none;
+    }
+    /* Quick in, slower out: the whole card presses toward the finger. */
+    .card:active {
+      transform: scale(0.97);
+      background: var(--surface);
+      transition:
+        background 100ms linear,
+        transform 100ms var(--ease-out);
+    }
+    .play:active {
+      transform: scale(0.92);
     }
   }
   @media (prefers-reduced-motion: reduce) {
@@ -232,8 +273,19 @@
     .play {
       transition: none;
     }
-    .card:hover {
+    .card:hover,
+    .card:active,
+    .play:active {
       transform: none;
     }
+  }
+  :global(:root[data-motion='reduced']) .card,
+  :global(:root[data-motion='reduced']) .play {
+    transition: none;
+  }
+  :global(:root[data-motion='reduced']) .card:hover,
+  :global(:root[data-motion='reduced']) .card:active,
+  :global(:root[data-motion='reduced']) .play:active {
+    transform: none;
   }
 </style>

@@ -55,10 +55,28 @@
     cursor: pointer;
     transition:
       background var(--transition),
-      color var(--transition);
+      color var(--transition),
+      transform 100ms var(--ease-out);
   }
-  button:hover {
+  button {
+    -webkit-tap-highlight-color: transparent;
+  }
+  @media (hover: hover) {
+    button:hover {
+      color: var(--text);
+    }
+  }
+  button:active {
     color: var(--text);
+    transform: scale(0.95);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    button:active {
+      transform: none;
+    }
+  }
+  :global(:root[data-motion='reduced']) button:active {
+    transform: none;
   }
   button.on {
     background: var(--surface-3);

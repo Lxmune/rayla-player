@@ -60,12 +60,23 @@
       transform var(--duration-fast) var(--ease-out),
       box-shadow var(--transition);
   }
-  .icon-btn:hover:not(:disabled) {
-    color: var(--text);
-    background: var(--hover);
+  .icon-btn {
+    -webkit-tap-highlight-color: transparent;
+  }
+  @media (hover: hover) {
+    .icon-btn:hover:not(:disabled) {
+      color: var(--text);
+      background: var(--hover);
+    }
   }
   .icon-btn:active:not(:disabled) {
     transform: scale(0.92);
+  }
+  @media (hover: none) {
+    .icon-btn:active:not(:disabled) {
+      color: var(--text);
+      background: var(--active);
+    }
   }
   .icon-btn.active {
     color: var(--accent);
@@ -82,11 +93,18 @@
       transform var(--duration-fast) var(--ease-out),
       box-shadow var(--accent-transition);
   }
-  .icon-btn.primary:hover:not(:disabled) {
+  @media (hover: hover) {
+    .icon-btn.primary:hover:not(:disabled) {
+      background: var(--accent);
+      color: var(--accent-contrast);
+      filter: brightness(1.08);
+      transform: scale(1.05);
+    }
+  }
+  .icon-btn.primary:active:not(:disabled) {
     background: var(--accent);
     color: var(--accent-contrast);
-    filter: brightness(1.08);
-    transform: scale(1.05);
+    transform: scale(0.92);
   }
   .icon-btn:disabled {
     opacity: 0.35;
