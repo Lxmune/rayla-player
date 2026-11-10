@@ -117,6 +117,17 @@ describe('PlayerBar', () => {
     await screen.findByRole('button', { name: 'Play' });
   });
 
+  it('on phones the artist line opens now playing instead of navigating away', async () => {
+    const { app } = await signedIn({ 'GET /Items': tracks() });
+    const ctx = withContext(app);
+    render(PlayerBar, { props: { phone: true }, context: ctx.context });
+    await app.core.player.playQueue([parseBaseItem(trackJson('t1', 'First Song'))]);
+    await flush();
+    await fireEvent.click(screen.getByRole('button', { name: 'Artist' }));
+    expect(ctx.ui.nowPlayingOpen).toBe(true);
+    expect(ctx.router.current.name).not.toBe('artist');
+  });
+
   it('shows the bit-perfect badge from the signal path', async () => {
     const { app, engine } = await signedIn();
     render(PlayerBar, { context: withContext(app).context });

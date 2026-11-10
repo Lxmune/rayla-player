@@ -180,7 +180,8 @@
       </button>
       <span class="text">
         <button type="button" class="title" onclick={openNowPlaying}>{item.name}</button>
-        <button type="button" class="artist" onclick={openArtist}>{artistLine(item)}</button>
+        <!-- On phones the whole middle opens the player (the artist is one tap away there). -->
+        <button type="button" class="artist" onclick={phone ? openNowPlaying : openArtist}>{artistLine(item)}</button>
       </span>
       <IconButton
         icon={favorite ? 'heartFill' : 'heart'}

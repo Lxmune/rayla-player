@@ -158,6 +158,7 @@
     <div class="top-right">
       <BitPerfectBadge />
       <SleepTimerButton />
+      <IconButton icon="sliders" label="Sound & quality" onclick={() => (ui.sheet = { kind: 'audio' })} />
       <IconButton icon="signal" label="Signal path" onclick={() => (ui.sheet = { kind: 'signal' })} />
       {#if item}
         <IconButton icon="info" label="Track info" onclick={() => (ui.sheet = { kind: 'tech', item })} />
@@ -489,13 +490,16 @@
       gap: var(--space-4);
       padding: 0 var(--space-4) var(--space-4);
     }
+    /* The player fills the first screen; lyrics / queue start below the fold. */
     .left {
       flex: none;
-      justify-content: flex-start;
+      justify-content: space-evenly;
       width: min(100%, 520px);
+      min-height: 100%;
     }
     .cover {
-      width: min(80vw, 42vh);
+      width: min(100%, 50vh);
+      width: min(100%, 50dvh);
     }
     .right {
       flex: none;
