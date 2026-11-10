@@ -12,7 +12,9 @@
       ? `Sleep timer: ${formatTime(sleep.remainingMs)} left`
       : sleep.mode === 'track'
         ? 'Sleep timer: end of track'
-        : 'Sleep timer',
+        : sleep.mode === 'album'
+          ? 'Sleep timer: end of album'
+          : 'Sleep timer',
   );
 
   function open(e: MouseEvent) {
@@ -31,6 +33,13 @@
         onselect: () => {
           sleep.endOfTrack();
           ui.toast('Playback will pause after this track');
+        },
+      },
+      {
+        label: 'End of album',
+        onselect: () => {
+          sleep.endOfAlbum();
+          ui.toast('Playback will pause after this album');
         },
       },
       { label: 'Cancel timer', danger: true, disabled: sleep.mode === 'off', onselect: () => sleep.cancel() },

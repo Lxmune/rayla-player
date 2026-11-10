@@ -11,7 +11,14 @@ import {
   track,
   trackJson,
 } from '../test-support';
-import { PlayerController, type PlayerEvent, type RadioSource } from './controller.svelte';
+import type { NetworkType } from '../android';
+import {
+  PlayerController,
+  type LongResumeStore,
+  type NetworkSource,
+  type PlayerEvent,
+  type RadioSource,
+} from './controller.svelte';
 import { EngineErrors } from './errors.svelte';
 
 function seededRandom(seed: number): () => number {
@@ -31,7 +38,16 @@ const reportsHttp = () =>
     'POST /Sessions/Playing/Stopped': {},
   });
 
-function setup(opts: { http?: FakeHttp; signedIn?: boolean; dlEngine?: FakeDownloadsEngine } = {}) {
+function setup(
+  opts: {
+    http?: FakeHttp;
+    signedIn?: boolean;
+    dlEngine?: FakeDownloadsEngine;
+    network?: NetworkSource;
+    longResume?: LongResumeStore;
+    now?: () => number;
+  } = {},
+) {
   const engine = new FakeEngine();
   const http = opts.http ?? reportsHttp();
   const client = fakeClient(http);
@@ -46,6 +62,9 @@ function setup(opts: { http?: FakeHttp; signedIn?: boolean; dlEngine?: FakeDownl
     downloads,
     errors,
     random: seededRandom(1),
+    network: opts.network,
+    longResume: opts.longResume,
+    now: opts.now,
   });
   return { engine, http, client, errors, settings, downloads, dlEngine, player };
 }
@@ -768,5 +787,127 @@ describe('PlayerController radio', () => {
     await t.player.playRadio(seed, more, 'Again');
     await t.player.clear();
     expect(t.player.radio).toBeNull();
+  });
+});
+
+describe('PlayerController mobile data cap', () => {
+  function fakeNet(initial: NetworkType) {
+    let cb: ((t: NetworkType) => void) | null = null;
+    const net: NetworkSource = {
+      get: async () => initial,
+      onChange: (c) => {
+        cb = c;
+        return () => {
+          cb = null;
+        };
+      },
+    };
+    return { net, set: (t: NetworkType) => cb?.(t) };
+  }
+
+  it('caps at the mobile bitrate on cellular only, and re-arms on network change', async () => {
+    const n = fakeNet('wifi');
+    const t = setup({ network: n.net });
+    await t.player.attach();
+    await flush();
+    await t.settings.updateStreaming({ mobileCapEnabled: true, mobileMaxBitrate: 128_000 });
+    await t.settings.setMaxBitrate(null);
+    await t.player.playQueue([track('a'), track('b')]);
+    expect(t.player.effectiveMaxBitrate).toBeNull();
+    n.set('cellular');
+    await flush();
+    expect(t.player.effectiveMaxBitrate).toBe(128_000);
+    expect(t.engine.nextRequests.at(-1)?.url).toContain('MaxStreamingBitrate=128000');
+    n.set('wifi');
+    await flush();
+    expect(t.player.effectiveMaxBitrate).toBeNull();
+  });
+
+  it('is ignored when disabled; adaptive still lowers it', async () => {
+    const n = fakeNet('cellular');
+    const t = setup({ network: n.net });
+    await t.player.attach();
+    await flush();
+    expect(t.player.effectiveMaxBitrate).toBeNull();
+    await t.settings.updateStreaming({ mobileCapEnabled: true, mobileMaxBitrate: 320_000, adaptive: true });
+    expect(t.player.effectiveMaxBitrate).toBe(320_000);
+    await t.player.playQueue([track('a')]);
+    t.engine.throughput(400_000);
+    expect(t.player.effectiveMaxBitrate).toBe(128_000);
+  });
+});
+
+describe('PlayerController resume long tracks', () => {
+  const HOUR = 3_600_000;
+  function memStore(initial: Record<string, number> = {}) {
+    const map = new Map(Object.entries(initial));
+    const store: LongResumeStore = {
+      get: (id) => map.get(id) ?? null,
+      set: (id, ms) => void (ms === null ? map.delete(id) : map.set(id, ms)),
+    };
+    return { map, store };
+  }
+
+  it('saves throttled, on pause and clears near the end', async () => {
+    let now = 1_000_000;
+    const m = memStore();
+    const t = setup({ longResume: m.store, now: () => now });
+    await t.player.attach();
+    await t.settings.updatePlayback({ resumeLongTracksMin: 20 });
+    const book = track('book', { durationMs: HOUR });
+    await t.player.playQueue([book]);
+    t.engine.position('book', 5000, { dur: HOUR });
+    expect(m.map.get('book')).toBe(5000);
+    now += 3000;
+    t.engine.position('book', 8000, { dur: HOUR });
+    expect(m.map.get('book')).toBe(5000); // throttled
+    now += 10_000;
+    t.engine.position('book', 20_000, { dur: HOUR });
+    expect(m.map.get('book')).toBe(20_000);
+    t.engine.position('book', 22_000, { dur: HOUR });
+    t.engine.state('paused');
+    expect(m.map.get('book')).toBe(22_000);
+    t.engine.position('book', HOUR - 10_000, { dur: HOUR });
+    now += 11_000;
+    t.engine.position('book', HOUR - 9_000, { dur: HOUR });
+    expect(m.map.has('book')).toBe(false); // finished within the last 30 s
+  });
+
+  it('ignores short tracks and a threshold of 0', async () => {
+    const m = memStore();
+    const t = setup({ longResume: m.store });
+    await t.player.attach();
+    await t.settings.updatePlayback({ resumeLongTracksMin: 20 });
+    await t.player.playQueue([track('short')]);
+    t.engine.position('short', 5000, { dur: 180_000 });
+    expect(m.map.size).toBe(0);
+    await t.settings.updatePlayback({ resumeLongTracksMin: 0 });
+    await t.player.playQueue([track('book', { durationMs: HOUR })]);
+    t.engine.position('book', 5000, { dur: HOUR });
+    expect(m.map.size).toBe(0);
+  });
+
+  it('starts a long track from its saved position; restart is seek 0', async () => {
+    const m = memStore({ book: 600_000 });
+    const t = setup({ longResume: m.store });
+    await t.player.attach();
+    await t.settings.updatePlayback({ resumeLongTracksMin: 20 });
+    await t.player.playQueue([track('book', { durationMs: HOUR })]);
+    expect(t.engine.calls.slice(0, 2)).toEqual(['load(book,true)', 'seek(600000)']);
+    expect(t.player.positionMs).toBe(600_000);
+    await t.player.seek(0);
+    expect(t.engine.calls).toContain('seek(0)');
+  });
+
+  it('saves the position when leaving the track', async () => {
+    const m = memStore();
+    const t = setup({ longResume: m.store });
+    await t.player.attach();
+    await t.settings.updatePlayback({ resumeLongTracksMin: 20 });
+    await t.player.playQueue([track('book', { durationMs: HOUR }), track('x')]);
+    t.engine.position('book', 5000, { dur: HOUR });
+    t.engine.position('book', 9000, { dur: HOUR });
+    await t.player.next();
+    expect(m.map.get('book')).toBe(9000);
   });
 });

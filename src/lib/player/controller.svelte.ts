@@ -17,6 +17,7 @@ import {
   willTranscode,
   type BaseItem,
 } from '../jellyfin/models';
+import type { NetworkType } from '../android';
 import type { AppSettings, TranscodeCodec } from '../settings/types';
 import type { TrackMeta } from '../track-meta';
 import { effectiveMaxBitrate, ewma } from './adaptive';
@@ -57,6 +58,24 @@ export interface PlayerDownloads {
   isDownloaded(itemId: string): boolean;
 }
 
+/** Network type source (Android bridge; tests use a fake). */
+export interface NetworkSource {
+  get(): Promise<NetworkType>;
+  /** Subscribes to changes; returns (a promise of) the unsubscribe function. */
+  onChange(cb: (type: NetworkType) => void): Promise<() => void> | (() => void);
+}
+
+/** Remembered positions of long tracks (per profile; the core backs it with kv). */
+export interface LongResumeStore {
+  get(itemId: string): number | null;
+  /** `null` forgets the track. */
+  set(itemId: string, positionMs: number | null): void;
+}
+
+const LONG_RESUME_THROTTLE_MS = 10_000;
+/** A long track finished when within this much of its end. */
+const LONG_RESUME_DONE_MS = 30_000;
+
 export interface PlayerDeps {
   engine: PlayerEngine;
   /** The active Jellyfin client, or null when signed out. */
@@ -68,6 +87,8 @@ export interface PlayerDeps {
   random?: () => number;
   /** Epoch ms. Default Date.now. */
   now?: () => number;
+  network?: NetworkSource;
+  longResume?: LongResumeStore;
 }
 
 /** An engine event together with the queue entry it refers to. */
@@ -120,6 +141,9 @@ export class PlayerController {
     return this.repeat === 'all' ? 0 : null;
   });
 
+  /** Current connection type; only `cellular` is metered. */
+  networkType = $state<NetworkType>('other');
+
   /** Active radio (auto-extending queue), or null. */
   radio = $state.raw<{ label: string } | null>(null);
   private radioSource: RadioSource | null = null;
@@ -153,6 +177,11 @@ export class PlayerController {
   private unlisten: (() => void) | null = null;
   private attaching: Promise<void> | null = null;
   private unsubSettings: () => void;
+  private unsubNetwork: (() => void) | null = null;
+  private disposed = false;
+  /** Long-track resume bookkeeping. */
+  private longTrack: { id: string; durationMs: number } | null = null;
+  private lastLongSave = 0;
 
   // Jellyfin reporting.
   private reportedId: string | null = null;
@@ -177,6 +206,25 @@ export class PlayerController {
         void this.syncPrefetch();
       }
     });
+    void this.watchNetwork();
+  }
+
+  private async watchNetwork(): Promise<void> {
+    const net = this.deps.network;
+    if (!net) return;
+    const apply = (type: NetworkType) => {
+      const before = this.effectiveMaxBitrate;
+      this.networkType = type;
+      if (this.current !== null && this.effectiveMaxBitrate !== before) void this.armNext();
+    };
+    try {
+      apply(await net.get());
+      const un = await net.onChange(apply);
+      if (this.disposed) un();
+      else this.unsubNetwork = un;
+    } catch {
+      // no network info: stay on the plain cap
+    }
   }
 
   /** The codec of the URL: FLAC only while the effective cap leaves room for CD quality. */
@@ -188,7 +236,12 @@ export class PlayerController {
   }
 
   private effectiveCap(s: AppSettings, throughput = this.throughputBps): number | null {
-    return effectiveMaxBitrate(s.maxBitrate, s.streaming.adaptive, throughput);
+    const mobile = this.networkType === 'cellular' && s.streaming.mobileCapEnabled;
+    return effectiveMaxBitrate(
+      mobile ? s.streaming.mobileMaxBitrate : s.maxBitrate,
+      s.streaming.adaptive,
+      throughput,
+    );
   }
 
   /** Subscribes to engine events. Idempotent; call once at startup. */
@@ -206,6 +259,9 @@ export class PlayerController {
   }
 
   dispose(): void {
+    this.disposed = true;
+    this.unsubNetwork?.();
+    this.unsubNetwork = null;
     this.unlisten?.();
     this.unlisten = null;
     this.attaching = null;
@@ -529,6 +585,8 @@ export class PlayerController {
   }
 
   stop(): Promise<void> {
+    this.flushLong();
+    this.longTrack = null;
     this.endRadio();
     this.reportStopped();
     this.playback = 'stopped';
@@ -620,6 +678,8 @@ export class PlayerController {
   private loadIndex(i: number, startPlaying = true): Promise<void> {
     const entry = this.queue[i];
     if (!entry) return Promise.resolve();
+    this.flushLong();
+    this.longTrack = null;
     this.repeatEntryId = null;
     this.currentEntryId = `${entry.uid}`;
     const request = this.request(i, this.currentEntryId);
@@ -627,6 +687,11 @@ export class PlayerController {
     this.seekGuard = null;
     this.positionMs = 0;
     this.durationMs = itemDurationMs(entry.item);
+    const resumeAt = this.savedLongPosition(entry.item);
+    if (resumeAt !== null) {
+      this.positionMs = resumeAt;
+      this.seekGuard = { target: resumeAt, until: this.now() + SEEK_GUARD_MS };
+    }
     this.signalPath = null;
     this.playback = startPlaying ? 'buffering' : 'paused';
     if (!request) {
@@ -640,6 +705,7 @@ export class PlayerController {
     this.maybeExtendRadio();
     return this.run(async () => {
       await this.deps.engine.load(request, startPlaying);
+      if (resumeAt !== null) await this.deps.engine.seek(resumeAt);
       await this.deps.engine.setNext(next);
       await this.deps.engine.prefetch(ahead);
     });
@@ -714,6 +780,7 @@ export class PlayerController {
         const was = this.playback;
         if (e.state === was) break;
         this.playback = e.state;
+        if (e.state === 'paused') this.flushLong();
         if (
           this.current &&
           (e.state === 'paused' || (e.state === 'playing' && was === 'paused'))
@@ -733,6 +800,7 @@ export class PlayerController {
         }
         this.positionMs = e.positionMs;
         if (e.durationMs > 0 && e.durationMs !== this.durationMs) this.durationMs = e.durationMs;
+        this.trackLong(false);
         if (this.isPlaying && this.now() - this.lastProgress >= PROGRESS_INTERVAL_MS) {
           this.reportProgress();
         }
@@ -742,6 +810,7 @@ export class PlayerController {
         this.onTrackStarted(e);
         break;
       case 'trackEnded':
+        if (e.entryId === this.currentEntryId) this.forgetLong();
         if (this.nextIndex === null && e.entryId === this.currentEntryId) {
           this.reportStopped();
           this.playback = 'stopped';
@@ -778,6 +847,8 @@ export class PlayerController {
     const entry = this.queue[target];
     if (target < 0 || !entry) return;
     this.reportStopped();
+    this.flushLong();
+    this.longTrack = null;
     this.currentEntryId = entryId;
     if (entryId === this.repeatEntryId) this.repeatEntryId = null;
     this.index = target;
@@ -786,6 +857,59 @@ export class PlayerController {
     this.positionMs = 0;
     this.reportStart(entry.item);
     void this.armNext();
+    // A long track with a remembered position (e.g. a gapless advance into it) continues there.
+    const at = this.savedLongPosition(entry.item);
+    if (at !== null) void this.seek(at);
+  }
+
+  // ------------------------------------------------- long-track resume
+
+  private longThresholdMs(): number {
+    return this.deps.settings.current.playback.resumeLongTracksMin * 60_000;
+  }
+
+  private isLong(durationMs: number): boolean {
+    const min = this.longThresholdMs();
+    return this.deps.longResume !== undefined && min > 0 && durationMs >= min;
+  }
+
+  /** The remembered position of `item` when it is a long track worth resuming, else null. */
+  private savedLongPosition(item: BaseItem): number | null {
+    const dur = itemDurationMs(item);
+    if (!this.isLong(dur)) return null;
+    const at = this.deps.longResume?.get(item.id) ?? null;
+    return at !== null && at >= 1000 && at < dur - LONG_RESUME_DONE_MS ? at : null;
+  }
+
+  private saveLong(id: string, durationMs: number, positionMs: number): void {
+    this.lastLongSave = this.now();
+    const done = positionMs < 1000 || positionMs >= durationMs - LONG_RESUME_DONE_MS;
+    this.deps.longResume?.set(id, done ? null : Math.floor(positionMs));
+  }
+
+  /** Called with each position event: remembers the track and saves (throttled). */
+  private trackLong(force: boolean): void {
+    const item = this.current;
+    if (!item || !this.isLong(this.durationMs)) {
+      this.longTrack = null;
+      return;
+    }
+    this.longTrack = { id: item.id, durationMs: this.durationMs };
+    if (force || this.now() - this.lastLongSave >= LONG_RESUME_THROTTLE_MS) {
+      this.saveLong(item.id, this.durationMs, this.positionMs);
+    }
+  }
+
+  /** Saves the position of the track being left / paused. */
+  private flushLong(): void {
+    const t = this.longTrack;
+    if (t) this.saveLong(t.id, t.durationMs, this.positionMs);
+  }
+
+  private forgetLong(): void {
+    const t = this.longTrack;
+    if (t) this.deps.longResume?.set(t.id, null);
+    this.longTrack = null;
   }
 
   private forward(e: EngineEvent): void {

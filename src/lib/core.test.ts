@@ -199,4 +199,20 @@ describe('createCore', () => {
     await first.core.dispose();
     expect(first.kv.get(`player.resume.${id}`)).toBeNull();
   });
+
+  it('crossfade mode "shuffle" follows shuffle and radio state', async () => {
+    const t = build();
+    await t.core.start();
+    await t.core.settings.updateDsp({ crossfadeMs: 3000 });
+    await t.core.settings.updatePlayback({ crossfadeMode: 'shuffle' });
+    expect(t.engine.lastDsp?.crossfadeMs).toBe(0);
+    await t.core.sessions.login('https://jf.test', 'ann', 'pw');
+    await t.core.player.playQueue([track('a'), track('b')], { shuffle: true });
+    await flush();
+    expect(t.engine.lastDsp?.crossfadeMs).toBe(3000);
+    await t.core.player.playQueue([track('a'), track('b')], { shuffle: false });
+    await flush();
+    expect(t.engine.lastDsp?.crossfadeMs).toBe(0);
+    await t.core.dispose();
+  });
 });

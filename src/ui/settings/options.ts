@@ -36,6 +36,16 @@ export const PREFETCH_OPTIONS = [0, 1, 2, 3, 4, 5].map((n) => ({
   label: n === 0 ? 'Off' : `${n} track${n === 1 ? '' : 's'}`,
 }));
 
+export const RESUME_LONG_OPTIONS = [0, 10, 20, 30, 60].map((m) => ({
+  value: String(m),
+  label: m === 0 ? 'Off' : `${m} minutes or longer`,
+}));
+
+export const CROSSFADE_MODE_OPTIONS = [
+  { value: 'always', label: 'Always (never inside an album)' },
+  { value: 'shuffle', label: 'Only when shuffling or in a radio' },
+];
+
 export const CACHE_LIMIT_OPTIONS = [512, 1024, 2048, 3072, 5120, 10240, 20480, 51200].map((mb) => ({
   value: String(mb),
   label: mb < 1024 ? `${mb} MB` : `${mb / 1024} GB`,

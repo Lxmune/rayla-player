@@ -9,9 +9,11 @@ import { TrackStates } from './track-states.svelte';
 import { FavoritesStore } from './jellyfin/favorites.svelte';
 import { JellyfinRemote, RemoteController } from './jellyfin/remote';
 import { SessionStore, type Secrets } from './jellyfin/session.svelte';
+import { getNetworkType, onNetworkChanged } from './android';
 import { ipc, type Ipc } from './ipc';
-import { PlayerController, type PlayerEngine } from './player/controller.svelte';
+import { PlayerController, type NetworkSource, type PlayerEngine } from './player/controller.svelte';
 import { EngineErrors, errorMessage } from './player/errors.svelte';
+import { kvLongResume } from './player/long-resume';
 import { parseResume, resumeKey, serializeResume } from './player/resume';
 import { SleepTimer } from './player/sleep-timer.svelte';
 import { httpFetch, localKv, openSocket, type HttpFetch, type KeyValueStore, type SocketFactory } from './platform';
@@ -29,6 +31,8 @@ export interface CoreDeps {
   openSocket: SocketFactory;
   secrets: Secrets;
   deviceName?: string;
+  /** Connection type source (Android); none = always unmetered. */
+  network?: NetworkSource;
   /** Test seams. */
   random?: () => number;
   now?: () => number;
@@ -83,6 +87,8 @@ export function createCore(deps: CoreDeps): Core {
     errors,
     random: deps.random,
     now: deps.now,
+    network: deps.network,
+    longResume: kvLongResume(deps.kv, () => sessions.active?.id ?? null),
   });
   const trackStates = new TrackStates({
     engine: deps.engine,
@@ -91,7 +97,14 @@ export function createCore(deps: CoreDeps): Core {
     settings,
     client: () => sessions.client,
   });
-  const sleep = new SleepTimer({ player, now: deps.now });
+  const sleep = new SleepTimer({
+    player,
+    now: deps.now,
+    setVolumeScale: (scale) => void settings.setVolumeScale(scale),
+    fadeEnabled: () => settings.current.playback.sleepFadeOut,
+  });
+  // Crossfade mode "shuffle": only crossfade while shuffling or playing a radio.
+  settings.setCrossfadeGate(() => player.shuffle || player.radio !== null);
   const favorites = new FavoritesStore(() => sessions.client);
   const remote = new RemoteController(
     (client) =>
@@ -151,6 +164,10 @@ export function createCore(deps: CoreDeps): Core {
   // Queue, order, repeat and the current entry changes save immediately.
   const stopResumeEffect = $effect.root(() => {
     $effect(() => {
+      void [player.shuffle, player.radio];
+      untrack(() => void settings.refreshDsp());
+    });
+    $effect(() => {
       void [player.queue, player.index, player.shuffle, player.repeat];
       untrack(saveResume);
     });
@@ -208,5 +225,6 @@ export function createProductionCore(): Core {
     openSocket,
     secrets: { get: (k) => ipc.secretGet(k), set: (k, v) => ipc.secretSet(k, v) },
     deviceName: 'Desktop',
+    network: { get: getNetworkType, onChange: onNetworkChanged },
   });
 }

@@ -88,6 +88,12 @@
     disabled={!canExclusive}
     onchange={(v) => void settings.setOutput(selectedId, v)}
   />
+  <ToggleRow
+    label="Separate sound settings for each output"
+    hint="Equalizer, gain and processing are remembered per device, so headphones and speakers keep their own"
+    checked={settings.current.perDeviceDsp}
+    onchange={(v) => void settings.setPerDeviceDsp(v)}
+  />
 </Section>
 
 <style>

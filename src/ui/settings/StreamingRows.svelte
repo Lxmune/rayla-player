@@ -42,6 +42,21 @@
   checked={streaming.adaptive}
   onchange={(adaptive) => void settings.updateStreaming({ adaptive })}
 />
+<ToggleRow
+  label="Mobile data quality"
+  hint="Use a lower bitrate cap while on mobile data"
+  checked={streaming.mobileCapEnabled}
+  onchange={(mobileCapEnabled) => void settings.updateStreaming({ mobileCapEnabled })}
+/>
+{#if streaming.mobileCapEnabled}
+  <SelectRow
+    label="Bitrate on mobile data"
+    hint="Applies instead of the cap above on cellular connections"
+    value={bitrateValue(streaming.mobileMaxBitrate)}
+    options={BITRATE_OPTIONS}
+    onchange={(v) => void settings.updateStreaming({ mobileMaxBitrate: parseBitrate(v) })}
+  />
+{/if}
 <SelectRow
   label="Download ahead"
   hint="Upcoming queue tracks are fully downloaded ahead for gap-free playback on bad connections"

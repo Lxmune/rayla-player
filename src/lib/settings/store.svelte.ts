@@ -44,6 +44,7 @@ import {
 
 export const SETTINGS_KEY = 'settings';
 
+const deviceKey = (id: string | null): string => id ?? '';
 const cacheBytes = (mb: number): number => mb * 1024 * 1024;
 
 export type SettingsEngine = Pick<Ipc, 'setOutput' | 'setDsp' | 'cacheSetLimit' | 'cacheStats' | 'cacheClear'>;
@@ -169,6 +170,13 @@ export function parseBehavior(j: unknown): BehaviorSettings {
   };
 }
 
+/** null = original; a positive number of bits/s; anything else falls back. */
+function parseMobileBitrate(v: unknown, fallback: number | null): number | null {
+  if (v === null) return null;
+  const n = num(v);
+  return n !== null && n >= 1000 ? Math.trunc(n) : fallback;
+}
+
 export function parseStreaming(j: unknown): StreamingSettings {
   const o: Json = isObj(j) ? j : {};
   const d = DEFAULT_STREAMING;
@@ -178,7 +186,7 @@ export function parseStreaming(j: unknown): StreamingSettings {
     prefetchTracks: Math.trunc(clampNum(o.prefetchTracks, 0, MAX_PREFETCH_TRACKS, d.prefetchTracks)),
     cacheLimitMb: Math.trunc(clampNum(o.cacheLimitMb, CACHE_LIMIT_MIN_MB, CACHE_LIMIT_MAX_MB, d.cacheLimitMb)),
     mobileCapEnabled: bool(o.mobileCapEnabled, d.mobileCapEnabled),
-    mobileMaxBitrate: o.mobileMaxBitrate === null ? null : (num(o.mobileMaxBitrate) ?? d.mobileMaxBitrate),
+    mobileMaxBitrate: parseMobileBitrate(o.mobileMaxBitrate, d.mobileMaxBitrate),
   };
 }
 
@@ -251,6 +259,12 @@ export class SettingsStore {
   private readonly engine: SettingsEngine;
   private readonly errors: EngineErrors;
   private readonly listeners = new Set<(s: AppSettings, prev: AppSettings) => void>();
+  /** Whether crossfade may run right now (the `shuffle` crossfade mode). Wired by the core. */
+  private crossfadeAllowed: () => boolean = () => true;
+  /** Transient volume factor (sleep-timer fade); never saved. */
+  private volumeScale = 1;
+  /** Serialised DSP last sent to the engine; null until the first push. */
+  private lastPushed: string | null = null;
 
   constructor(deps: SettingsStoreDeps) {
     this.kv = deps.kv;
@@ -262,7 +276,44 @@ export class SettingsStore {
     } catch {
       // unreadable storage: defaults
     }
-    this.current = loadSettings(raw);
+    const loaded = loadSettings(raw);
+    const mine = loaded.perDeviceDsp ? loaded.deviceDsp[deviceKey(loaded.outputDeviceId)] : undefined;
+    this.current = mine ? { ...loaded, dsp: mine } : loaded;
+  }
+
+  /** The chain sent to the engine: the active one, minus a gated crossfade, times the transient volume scale. */
+  effectiveDsp(): DspConfig {
+    const s = this.current;
+    let dsp = s.dsp;
+    if (s.playback.crossfadeMode === 'shuffle' && !this.crossfadeAllowed() && dsp.crossfadeMs !== 0) {
+      dsp = { ...dsp, crossfadeMs: 0 };
+    }
+    if (this.volumeScale !== 1) dsp = { ...dsp, volume: dsp.volume * this.volumeScale };
+    return dsp;
+  }
+
+  /** Supplies the "crossfade allowed" predicate (shuffling or radio). Call `refreshDsp` when it changes. */
+  setCrossfadeGate(allowed: () => boolean): void {
+    this.crossfadeAllowed = allowed;
+  }
+
+  /** Re-sends the DSP chain when the effective one changed (gate, volume scale). No-op before startup. */
+  async refreshDsp(): Promise<void> {
+    if (this.lastPushed === null) return;
+    if (JSON.stringify(this.effectiveDsp()) === this.lastPushed) return;
+    await this.pushDsp();
+  }
+
+  private async pushDsp(): Promise<void> {
+    const dsp = this.effectiveDsp();
+    this.lastPushed = JSON.stringify(dsp);
+    await this.errors.guard(() => this.engine.setDsp(dsp));
+  }
+
+  /** Scales the engine volume for a while (1 = none). Not persisted. */
+  setVolumeScale(scale: number): Promise<void> {
+    this.volumeScale = Math.min(1, Math.max(0, scale));
+    return this.refreshDsp();
   }
 
   /** Called synchronously after each change. Returns an unsubscribe function. */
@@ -292,7 +343,8 @@ export class SettingsStore {
     const s = this.current;
     await this.errors.guard(async () => {
       await this.engine.setOutput(s.outputDeviceId, s.exclusive);
-      await this.engine.setDsp(s.dsp);
+      await this.engine.setDsp(this.effectiveDsp());
+      this.lastPushed = JSON.stringify(this.effectiveDsp());
       await this.engine.cacheSetLimit(cacheBytes(s.streaming.cacheLimitMb));
     });
   }
@@ -312,15 +364,43 @@ export class SettingsStore {
    * reported through `errors`.
    */
   async updateDsp(change: Change<DspConfig>): Promise<void> {
-    this.set({ ...this.current, dsp: applyChange(this.current.dsp, change) });
-    const dsp = this.current.dsp;
-    await this.errors.guard(() => this.engine.setDsp(dsp));
+    const s = this.current;
+    const dsp = applyChange(s.dsp, change);
+    const deviceDsp = s.perDeviceDsp ? { ...s.deviceDsp, [deviceKey(s.outputDeviceId)]: dsp } : s.deviceDsp;
+    this.set({ ...s, dsp, deviceDsp });
+    await this.pushDsp();
+    this.save();
+  }
+
+  /** Turns separate per-output DSP chains on/off. Turning on seeds the active device from the current chain. */
+  async setPerDeviceDsp(on: boolean): Promise<void> {
+    const s = this.current;
+    if (s.perDeviceDsp === on) return;
+    const deviceDsp = on ? { ...s.deviceDsp, [deviceKey(s.outputDeviceId)]: s.dsp } : s.deviceDsp;
+    this.set({ ...s, perDeviceDsp: on, deviceDsp });
     this.save();
   }
 
   async setOutput(deviceId: string | null, exclusive: boolean): Promise<void> {
-    this.set({ ...this.current, outputDeviceId: deviceId, exclusive });
-    await this.errors.guard(() => this.engine.setOutput(deviceId, exclusive));
+    const s = this.current;
+    let next: AppSettings = { ...s, outputDeviceId: deviceId, exclusive };
+    const swap = s.perDeviceDsp && deviceKey(deviceId) !== deviceKey(s.outputDeviceId);
+    if (swap) {
+      const known = s.deviceDsp[deviceKey(deviceId)];
+      const dsp = known ?? s.dsp; // first use of a device: seed from the current chain
+      next = { ...next, dsp, deviceDsp: { ...s.deviceDsp, [deviceKey(deviceId)]: dsp } };
+    }
+    this.set(next);
+    await this.errors.guard(async () => {
+      await this.engine.setOutput(deviceId, exclusive);
+    });
+    if (swap) await this.pushDsp();
+    this.save();
+  }
+
+  async updatePlayback(change: Change<PlaybackSettings>): Promise<void> {
+    this.set({ ...this.current, playback: parsePlayback(applyChange(this.current.playback, change)) });
+    await this.refreshDsp();
     this.save();
   }
 

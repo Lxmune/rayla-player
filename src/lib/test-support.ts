@@ -94,7 +94,7 @@ export function fakeClient(
 export function trackJson(
   id: string,
   name: string,
-  o: { index?: number; disc?: number; gain?: number; album?: string } = {},
+  o: { index?: number; disc?: number; gain?: number; album?: string; durationMs?: number } = {},
 ): Record<string, unknown> {
   return {
     Id: id,
@@ -106,7 +106,7 @@ export function trackJson(
     Artists: ['Artist'],
     ...(o.index !== undefined ? { IndexNumber: o.index } : {}),
     ...(o.disc !== undefined ? { ParentIndexNumber: o.disc } : {}),
-    RunTimeTicks: 1800000000,
+    RunTimeTicks: (o.durationMs ?? 180000) * 10000,
     ...(o.gain !== undefined ? { NormalizationGain: o.gain } : {}),
     MediaSources: [
       {
@@ -128,9 +128,17 @@ export function trackJson(
   };
 }
 
-export function track(id: string, o: { album?: string | null; gain?: number } = {}): BaseItem {
+export function track(
+  id: string,
+  o: { album?: string | null; gain?: number; durationMs?: number } = {},
+): BaseItem {
   return parseBaseItem(
-    trackJson(id, `Track ${id}`, { index: 1, gain: o.gain, album: o.album ?? 'al1' }),
+    trackJson(id, `Track ${id}`, {
+      index: 1,
+      gain: o.gain,
+      album: o.album ?? 'al1',
+      durationMs: o.durationMs,
+    }),
   );
 }
 

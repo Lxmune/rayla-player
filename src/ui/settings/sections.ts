@@ -10,6 +10,7 @@ export interface SectionInfo {
 export const SECTIONS: SectionInfo[] = [
   { id: 'appearance', label: 'Appearance', keywords: 'theme dark light system accent colour color cover density compact backdrop motion animation' },
   { id: 'behavior', label: 'Playback & behavior', keywords: 'resume restore queue start screen home startup' },
+  { id: 'playback', label: 'Playback', keywords: 'crossfade shuffle radio resume long tracks audiobook podcast sleep timer fade out' },
   { id: 'output', label: 'Output', keywords: 'device audio exclusive wasapi coreaudio dac speakers bit-perfect sample rate' },
   { id: 'gain', label: 'Volume & gain', keywords: 'volume replaygain replay gain preamp clip guard limiter loudness' },
   { id: 'eq', label: 'Equalizer', keywords: 'eq parametric autoeq band filter headphones peak shelf' },
@@ -18,6 +19,7 @@ export const SECTIONS: SectionInfo[] = [
   { id: 'cache', label: 'Cache', keywords: 'stream cache clear storage disk size limit' },
   { id: 'scrobbling', label: 'Scrobbling', keywords: 'listenbrainz last.fm lastfm scrobble history token' },
   { id: 'discord', label: 'Discord', keywords: 'rich presence activity application id status' },
+  { id: 'diagnostics', label: 'Diagnostics', keywords: 'diagnostics log debug errors support copy report' },
   { id: 'about', label: 'About', keywords: 'version shortcuts keyboard help rayla' },
 ];
 

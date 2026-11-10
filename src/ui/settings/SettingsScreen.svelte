@@ -3,6 +3,7 @@
   import { getApp } from '../../lib/app.svelte';
   import Icon from '../common/Icon.svelte';
   import AboutSection from './AboutSection.svelte';
+  import DiagnosticsSection from './DiagnosticsSection.svelte';
   import AppearanceSection from './AppearanceSection.svelte';
   import BehaviorSection from './BehaviorSection.svelte';
   import CacheSection from './CacheSection.svelte';
@@ -10,6 +11,7 @@
   import EqSection from './EqSection.svelte';
   import GainSection from './GainSection.svelte';
   import OutputSection from './OutputSection.svelte';
+  import PlaybackSection from './PlaybackSection.svelte';
   import ProcessingSection from './ProcessingSection.svelte';
   import ScrobbleSection from './ScrobbleSection.svelte';
   import { matchSections } from './sections';
@@ -71,6 +73,7 @@
       {/if}
       {#if shown('appearance')}<AppearanceSection />{/if}
       {#if shown('behavior')}<BehaviorSection />{/if}
+      {#if shown('playback')}<PlaybackSection />{/if}
       {#if shown('output')}<OutputSection />{/if}
       {#if shown('gain')}<GainSection />{/if}
       {#if shown('eq')}<EqSection />{/if}
@@ -79,6 +82,7 @@
       {#if shown('cache')}<CacheSection />{/if}
       {#if shown('scrobbling')}<ScrobbleSection />{/if}
       {#if shown('discord')}<DiscordSection />{/if}
+      {#if shown('diagnostics')}<DiagnosticsSection />{/if}
       {#if shown('about')}<AboutSection />{/if}
     </div>
   </div>
