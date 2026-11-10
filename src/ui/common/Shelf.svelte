@@ -95,7 +95,7 @@
 
 <style>
   .shelf {
-    margin-top: var(--space-6);
+    margin-top: var(--shelf-gap);
   }
   header {
     display: flex;

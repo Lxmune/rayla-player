@@ -178,13 +178,10 @@
     letter-spacing: var(--tracking-tight);
   }
   @media (max-width: 640px) {
-    /* The phone top bar shows the greeting. */
-    h1 {
-      display: none;
-    }
+    /* The phone top bar shows the greeting and pull-to-refresh replaces the button,
+       so the first albums start right under the top bar. */
     .head {
-      justify-content: flex-end;
-      margin-bottom: var(--space-2);
+      display: none;
     }
   }
   h2 {
@@ -258,8 +255,9 @@
     outline: 2px solid var(--text);
     outline-offset: 2px;
   }
+  /* Same rhythm as Shelf. */
   .top {
-    margin-top: var(--space-6);
+    margin-top: var(--shelf-gap);
   }
   .two-col {
     display: grid;
