@@ -10,6 +10,7 @@
 //! leading silence, and `flush` hands back whatever is still buffered.
 
 pub mod chain;
+pub mod compressor;
 pub mod convolve;
 pub mod crossfade;
 pub mod crossfeed;
@@ -19,6 +20,7 @@ pub mod gain;
 pub mod resample;
 
 pub use chain::Chain;
+pub use compressor::Compressor;
 pub use convolve::{load_wav_ir, parse_wav_ir, Convolver, ImpulseResponse};
 pub use crossfade::crossfade;
 pub use crossfeed::Crossfeed;
@@ -88,6 +90,30 @@ pub enum DitherMode {
     Shaped,
 }
 
+/// Downward compressor parameters; `enabled == false` removes the stage.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CompressorSettings {
+    /// Stage on/off.
+    pub enabled: bool,
+    /// Level (dBFS) above which gain is reduced.
+    pub threshold_db: f64,
+    /// Input dB over the threshold per output dB (≥ 1).
+    pub ratio: f64,
+    /// Time for gain reduction to engage, in ms.
+    pub attack_ms: f64,
+    /// Time for gain reduction to recover, in ms.
+    pub release_ms: f64,
+    /// Gain added after compression, in dB.
+    pub makeup_db: f64,
+}
+
+impl Default for CompressorSettings {
+    /// Off, with moderate settings ready for when it is switched on.
+    fn default() -> Self {
+        Self { enabled: false, threshold_db: -18.0, ratio: 3.0, attack_ms: 10.0, release_ms: 150.0, makeup_db: 0.0 }
+    }
+}
+
 /// Whole DSP configuration; mirrors the engine API's `DspConfig` field for
 /// field. `dither` is consumed by [`Quantizer`] and `crossfade_ms` by the
 /// engine (with [`crossfade()`]); [`Chain`] ignores both, as well as
@@ -112,6 +138,8 @@ pub struct DspConfig {
     pub convolution_path: Option<String>,
     /// Headphone crossfeed strength.
     pub crossfeed: CrossfeedLevel,
+    /// Dynamic-range compressor (after crossfeed, before resampling).
+    pub compressor: CompressorSettings,
     /// Requested output rate; see the struct docs.
     pub resample_to: Option<u32>,
     /// Dither for the final integer conversion.
@@ -133,6 +161,7 @@ impl Default for DspConfig {
             eq_bands: Vec::new(),
             convolution_path: None,
             crossfeed: CrossfeedLevel::Off,
+            compressor: CompressorSettings::default(),
             resample_to: None,
             dither: DitherMode::Off,
             crossfade_ms: 0,

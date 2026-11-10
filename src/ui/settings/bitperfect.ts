@@ -9,6 +9,7 @@ export function bitPerfectBlockers(dsp: DspConfig, maxBitrate: number | null): s
   if (dsp.eqEnabled) out.push('Parametric EQ is on');
   if (dsp.convolutionPath !== null) out.push('Convolution is on');
   if (dsp.crossfeed !== 'off') out.push('Crossfeed is on');
+  if (dsp.compressor.enabled) out.push('Compressor is on');
   if (dsp.resampleTo !== null) out.push('Resampling is forced');
   if (dsp.dither !== 'off') out.push('Dither is on');
   if (dsp.crossfadeMs > 0) out.push('Crossfade is on');

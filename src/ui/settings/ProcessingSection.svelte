@@ -7,6 +7,8 @@
   import RangeRow from './RangeRow.svelte';
   import Section from './Section.svelte';
   import SelectRow from './SelectRow.svelte';
+  import CompressorRows from './CompressorRows.svelte';
+  import { CROSSFEED_OPTIONS } from './options';
 
   const settings = getApp().core.settings;
   const dsp = $derived(settings.current.dsp);
@@ -51,14 +53,10 @@
   <SelectRow
     label="Crossfeed"
     value={dsp.crossfeed}
-    options={[
-      { value: 'off', label: 'Off' },
-      { value: 'low', label: 'Low' },
-      { value: 'medium', label: 'Medium' },
-      { value: 'high', label: 'High' },
-    ]}
+    options={CROSSFEED_OPTIONS}
     onchange={(v) => void settings.updateDsp({ crossfeed: v as CrossfeedLevel })}
   />
+  <CompressorRows full />
   <SelectRow
     label="Resample to"
     value={dsp.resampleTo === null ? 'auto' : String(dsp.resampleTo)}

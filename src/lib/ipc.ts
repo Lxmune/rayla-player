@@ -54,6 +54,18 @@ export interface EqBand {
   q: number;
 }
 
+/** Downward compressor (after crossfeed, before resampling). */
+export interface CompressorConfig {
+  enabled: boolean;
+  /** dBFS above which gain is reduced. */
+  thresholdDb: number;
+  /** ≥ 1 (n:1). */
+  ratio: number;
+  attackMs: number;
+  releaseMs: number;
+  makeupDb: number;
+}
+
 /** All off/empty with volume 1.0 = bit-perfect passthrough. */
 export interface DspConfig {
   /** 0.0 ..= 1.0 */
@@ -67,6 +79,7 @@ export interface DspConfig {
   /** WAV impulse response; null disables convolution. */
   convolutionPath: string | null;
   crossfeed: CrossfeedLevel;
+  compressor: CompressorConfig;
   /** Force output rate; null = source rate (or nearest supported in exclusive). */
   resampleTo: number | null;
   dither: DitherMode;

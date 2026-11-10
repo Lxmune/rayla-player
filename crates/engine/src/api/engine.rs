@@ -104,6 +104,24 @@ pub enum DsdMode {
     Pcm,
 }
 
+/// Downward compressor; `enabled: false` removes the stage.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompressorConfig {
+    pub enabled: bool,
+    pub threshold_db: f64,
+    pub ratio: f64,
+    pub attack_ms: f64,
+    pub release_ms: f64,
+    pub makeup_db: f64,
+}
+
+impl Default for CompressorConfig {
+    fn default() -> Self {
+        Self { enabled: false, threshold_db: -18.0, ratio: 3.0, attack_ms: 10.0, release_ms: 150.0, makeup_db: 0.0 }
+    }
+}
+
 /// Whole DSP chain configuration. Everything off/empty with `volume == 1.0`
 /// means the engine passes decoded samples to the device untouched.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -119,6 +137,9 @@ pub struct DspConfig {
     /// WAV impulse response for convolution; `None` disables the stage.
     pub convolution_path: Option<String>,
     pub crossfeed: CrossfeedLevel,
+    /// Missing in configs from older frontends: defaults to off.
+    #[serde(default)]
+    pub compressor: CompressorConfig,
     /// Force this output rate. `None` plays at the source rate, or at the
     /// nearest rate the (exclusive-mode) device supports.
     pub resample_to: Option<u32>,
@@ -323,14 +344,21 @@ mod contract_tests {
             "volume": 1.0, "replayGain": "album", "preampDb": 0.0, "clipGuard": true,
             "eqEnabled": true, "eqPreampDb": -3.0,
             "eqBands": [{"kind": "lowShelf", "freqHz": 100.0, "gainDb": 2.0, "q": 0.7}],
-            "convolutionPath": null, "crossfeed": "medium", "resampleTo": null,
-            "dither": "tpdf", "crossfadeMs": 0, "dsd": "dop"
+            "convolutionPath": null, "crossfeed": "medium",
+            "compressor": {"enabled": true, "thresholdDb": -20.0, "ratio": 4.0, "attackMs": 5.0,
+                           "releaseMs": 120.0, "makeupDb": 2.0},
+            "resampleTo": null, "dither": "tpdf", "crossfadeMs": 0, "dsd": "dop"
         });
         let c: DspConfig = serde_json::from_value(j.clone()).unwrap();
         assert_eq!(c.eq_bands[0].kind, EqBandKind::LowShelf);
         assert_eq!(c.replay_gain, ReplayGainMode::Album);
         assert_eq!(c.dsd, DsdMode::Dop);
         assert_eq!(serde_json::to_value(&c).unwrap(), j);
+        // A config without the compressor (older frontend) still parses, with it off.
+        let mut old = j.clone();
+        old.as_object_mut().unwrap().remove("compressor");
+        let c: DspConfig = serde_json::from_value(old).unwrap();
+        assert_eq!(c.compressor, CompressorConfig::default());
     }
 
     #[test]

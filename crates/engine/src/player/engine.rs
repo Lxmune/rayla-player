@@ -92,6 +92,7 @@ pub fn dsp_is_neutral(c: &DspConfig) -> bool {
         && !c.eq_enabled
         && c.convolution_path.is_none()
         && c.crossfeed == CrossfeedLevel::Off
+        && !c.compressor.enabled
         && c.resample_to.is_none()
         && c.dither == DitherMode::Off
         && c.crossfade_ms == 0
@@ -108,6 +109,7 @@ pub fn neutral_dsp() -> DspConfig {
         eq_bands: Vec::new(),
         convolution_path: None,
         crossfeed: CrossfeedLevel::Off,
+        compressor: CompressorConfig::default(),
         resample_to: None,
         dither: DitherMode::Off,
         crossfade_ms: 0,

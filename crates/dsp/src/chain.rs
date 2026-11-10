@@ -1,5 +1,6 @@
 //! The per-stream processing chain.
 
+use crate::compressor::Compressor;
 use crate::convolve::{load_wav_ir, Convolver};
 use crate::crossfeed::Crossfeed;
 use crate::eq::Equalizer;
@@ -7,13 +8,13 @@ use crate::gain::{linear_to_db, resolve_gain, GainSource, Limiter};
 use crate::resample::Resampler;
 use crate::{CrossfeedLevel, DspConfig, Error, GainTags};
 
-/// ReplayGain/preamp → volume → EQ → convolution → crossfeed → resampler →
+/// ReplayGain/preamp → volume → EQ → convolution → crossfeed → compressor → resampler →
 /// limiter, built for one stream (sample rate, channel count, track tags).
 ///
 /// Stages that are off are not built. Build a new chain when the config or the
 /// track changes; there is no parameter smoothing. The limiter is only added
 /// with `clip_guard` when some stage can raise the level (gain above 0 dB,
-/// volume above 1, EQ, convolution, crossfeed or resampling).
+/// volume above 1, EQ, convolution, crossfeed, compressor makeup or resampling).
 pub struct Chain {
     channels: usize,
     out_rate: u32,
@@ -22,6 +23,7 @@ pub struct Chain {
     eq: Option<Equalizer>,
     conv: Option<Convolver>,
     crossfeed: Option<Crossfeed>,
+    compressor: Option<Compressor>,
     resampler: Option<Resampler>,
     limiter: Option<Limiter>,
     stages: Vec<String>,
@@ -100,13 +102,26 @@ impl Chain {
         }
         debug_assert!(crossfeed.is_some() || config.crossfeed == CrossfeedLevel::Off || channels != 2);
 
+        let mut compressor = None;
+        let c = &config.compressor;
+        if c.enabled {
+            compressor = Some(Compressor::new(c, stream_rate, channels));
+            stages.push(format!(
+                "Compressor {}, {}:1{}",
+                signed_db(c.threshold_db),
+                c.ratio,
+                if c.makeup_db != 0.0 { format!(", makeup {}", signed_db(c.makeup_db)) } else { String::new() }
+            ));
+        }
+        let comp_raises = compressor.is_some() && c.makeup_db > 0.0;
+
         let mut resampler = None;
         if output_rate != stream_rate {
             resampler = Some(Resampler::new(stream_rate, output_rate, channels)?);
             stages.push(format!("Resample {} \u{2192} {} kHz", khz(stream_rate), khz(output_rate)));
         }
 
-        let can_raise = boosts || eq.is_some() || conv.is_some() || crossfeed.is_some() || resampler.is_some();
+        let can_raise = boosts || comp_raises || eq.is_some() || conv.is_some() || crossfeed.is_some() || resampler.is_some();
         let limiter = (config.clip_guard && can_raise).then(|| Limiter::new(output_rate, channels));
         if limiter.is_some() {
             stages.push("Limiter".to_string());
@@ -119,6 +134,7 @@ impl Chain {
             eq,
             conv,
             crossfeed,
+            compressor,
             resampler,
             limiter,
             stages,
@@ -187,12 +203,18 @@ impl Chain {
         self.finish(cur, out, true);
     }
 
-    /// Crossfeed → resampler → limiter on `cur`, appending to `out`.
+    /// Crossfeed → compressor → resampler → limiter on `cur`, appending to `out`.
     fn finish(&mut self, mut cur: Vec<f64>, out: &mut Vec<f64>, flushing: bool) {
         if let Some(cf) = &mut self.crossfeed {
             cf.process(&mut cur);
             if flushing {
                 cf.reset();
+            }
+        }
+        if let Some(comp) = &mut self.compressor {
+            comp.process(&mut cur);
+            if flushing {
+                comp.reset();
             }
         }
         if let Some(rs) = &mut self.resampler {
@@ -252,6 +274,18 @@ mod tests {
         assert!(Chain::new(&cfg, 44_100, 2, 44_100, &tags()).unwrap().is_neutral());
         let cfg = DspConfig { crossfeed: CrossfeedLevel::High, ..Default::default() };
         assert!(Chain::new(&cfg, 44_100, 1, 44_100, &tags()).unwrap().is_neutral());
+    }
+
+    #[test]
+    fn compressor_stage_is_described_and_makeup_adds_the_limiter() {
+        use crate::CompressorSettings;
+        let comp = CompressorSettings { enabled: true, ..Default::default() };
+        let cfg = DspConfig { compressor: comp, clip_guard: true, ..Default::default() };
+        let c = Chain::new(&cfg, 48_000, 2, 48_000, &tags()).unwrap();
+        assert_eq!(c.describe(), vec!["Compressor \u{2212}18.0 dB, 3:1".to_string()]);
+        let cfg = DspConfig { compressor: CompressorSettings { makeup_db: 4.0, ..comp }, clip_guard: true, ..Default::default() };
+        let c = Chain::new(&cfg, 48_000, 2, 48_000, &tags()).unwrap();
+        assert_eq!(c.describe(), vec!["Compressor \u{2212}18.0 dB, 3:1, makeup +4.0 dB".to_string(), "Limiter".to_string()]);
     }
 
     fn full_config(ir_path: &str) -> DspConfig {

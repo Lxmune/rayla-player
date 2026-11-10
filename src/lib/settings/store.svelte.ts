@@ -2,6 +2,7 @@
 // change, pushed to the engine where relevant.
 
 import type {
+  CompressorConfig,
   CrossfeedLevel,
   DitherMode,
   DspConfig,
@@ -16,6 +17,7 @@ import { EngineErrors } from '../player/errors.svelte';
 import {
   DEFAULT_APPEARANCE,
   DEFAULT_BEHAVIOR,
+  DEFAULT_COMPRESSOR,
   DEFAULT_DISCORD,
   DEFAULT_DSP,
   DEFAULT_SETTINGS,
@@ -56,6 +58,24 @@ const THEMES: readonly ThemeMode[] = ['dark', 'light', 'system'];
 const DENSITIES: readonly Density[] = ['comfortable', 'compact'];
 const HEX_COLOR = /^#[0-9a-f]{6}$/i;
 
+const clampNum = (v: unknown, lo: number, hi: number, fallback: number): number => {
+  const n = num(v);
+  return n === null ? fallback : Math.min(hi, Math.max(lo, n));
+};
+
+export function parseCompressor(j: unknown): CompressorConfig {
+  const o: Json = isObj(j) ? j : {};
+  const d = DEFAULT_COMPRESSOR;
+  return {
+    enabled: bool(o.enabled, d.enabled),
+    thresholdDb: clampNum(o.thresholdDb, -60, 0, d.thresholdDb),
+    ratio: clampNum(o.ratio, 1, 20, d.ratio),
+    attackMs: clampNum(o.attackMs, 0.1, 200, d.attackMs),
+    releaseMs: clampNum(o.releaseMs, 10, 2000, d.releaseMs),
+    makeupDb: clampNum(o.makeupDb, 0, 24, d.makeupDb),
+  };
+}
+
 export function parseDsp(j: unknown): DspConfig {
   const o: Json = isObj(j) ? j : {};
   const bands: EqBand[] = [];
@@ -81,6 +101,7 @@ export function parseDsp(j: unknown): DspConfig {
     eqBands: bands,
     convolutionPath: strOrNull(o.convolutionPath),
     crossfeed: enumOf(CROSSFEED, o.crossfeed, 'off'),
+    compressor: parseCompressor(o.compressor),
     resampleTo: resample === null ? null : Math.trunc(resample),
     dither: enumOf(DITHER, o.dither, 'off'),
     crossfadeMs: crossfade === null ? 0 : Math.trunc(crossfade),

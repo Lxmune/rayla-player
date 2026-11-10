@@ -173,7 +173,7 @@ describe('SettingsScreen appearance, behavior and navigation', () => {
   it('search filters sections and the categories list', async () => {
     const { context } = buildApp();
     render(SettingsScreen, { context });
-    expect(screen.getByText('Press', { exact: false })).toBeTruthy();
+    expect(screen.getByText(/^Press/)).toBeTruthy();
     await fireEvent.input(screen.getByRole('searchbox', { name: 'Search settings' }), { target: { value: 'dither' } });
     expect(screen.getByRole('heading', { name: 'Processing' })).toBeTruthy();
     expect(screen.queryByRole('heading', { name: 'Appearance' })).toBeNull();

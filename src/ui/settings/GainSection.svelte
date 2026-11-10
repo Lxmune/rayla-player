@@ -5,6 +5,7 @@
   import Section from './Section.svelte';
   import SelectRow from './SelectRow.svelte';
   import ToggleRow from './ToggleRow.svelte';
+  import { REPLAY_GAIN_OPTIONS } from './options';
 
   const settings = getApp().core.settings;
   const dsp = $derived(settings.current.dsp);
@@ -24,11 +25,7 @@
   <SelectRow
     label="ReplayGain"
     value={dsp.replayGain}
-    options={[
-      { value: 'off', label: 'Off' },
-      { value: 'track', label: 'Track' },
-      { value: 'album', label: 'Album' },
-    ]}
+    options={REPLAY_GAIN_OPTIONS}
     onchange={(v) => void settings.updateDsp({ replayGain: v as ReplayGainMode })}
   />
   <RangeRow

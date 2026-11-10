@@ -1,7 +1,7 @@
 // FROZEN: persisted app settings shape and defaults. The settings store
 // (src/lib/settings/store.ts) owns parsing, persistence and engine pushes.
 
-import type { DspConfig } from '../ipc';
+import type { CompressorConfig, DspConfig } from '../ipc';
 
 export type ThemeMode = 'dark' | 'light' | 'system';
 
@@ -77,6 +77,15 @@ export interface AppSettings {
   discord: DiscordSettings;
 }
 
+export const DEFAULT_COMPRESSOR: CompressorConfig = {
+  enabled: false,
+  thresholdDb: -18,
+  ratio: 3,
+  attackMs: 10,
+  releaseMs: 150,
+  makeupDb: 0,
+};
+
 export const DEFAULT_DSP: DspConfig = {
   volume: 1,
   replayGain: 'off',
@@ -87,6 +96,7 @@ export const DEFAULT_DSP: DspConfig = {
   eqBands: [],
   convolutionPath: null,
   crossfeed: 'off',
+  compressor: DEFAULT_COMPRESSOR,
   resampleTo: null,
   dither: 'off',
   crossfadeMs: 0,

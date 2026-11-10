@@ -53,6 +53,14 @@ describe('settings parsing', () => {
     expect(s.discord).toEqual(DEFAULT_DISCORD);
   });
 
+  it('compressor: missing in old settings means off, out-of-range values are clamped', () => {
+    expect(parseSettings({ dsp: {} }).dsp.compressor).toEqual(DEFAULT_DSP.compressor);
+    const c = parseSettings({
+      dsp: { compressor: { enabled: true, thresholdDb: -99, ratio: 0.5, attackMs: 'x', releaseMs: 5000, makeupDb: 3 } },
+    }).dsp.compressor;
+    expect(c).toEqual({ enabled: true, thresholdDb: -60, ratio: 1, attackMs: 10, releaseMs: 2000, makeupDb: 3 });
+  });
+
   it('parsed defaults do not share mutable arrays with the constants', () => {
     const s = parseSettings({});
     expect(s.dsp.eqBands).not.toBe(DEFAULT_DSP.eqBands);

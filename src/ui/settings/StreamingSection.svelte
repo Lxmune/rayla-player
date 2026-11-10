@@ -3,22 +3,18 @@
   import type { DsdMode } from '../../lib/ipc';
   import Section from './Section.svelte';
   import SelectRow from './SelectRow.svelte';
+  import { BITRATE_OPTIONS, bitrateValue, parseBitrate } from './options';
 
   const settings = getApp().core.settings;
-  const bitrates = [null, 320000, 256000, 192000, 128000];
-  const options = bitrates.map((b) => ({
-    value: b === null ? 'original' : String(b),
-    label: b === null ? 'Original (no transcoding)' : `${b / 1000} kbps`,
-  }));
 </script>
 
 <Section title="Streaming" id="streaming">
   <SelectRow
     label="Bitrate cap"
     hint="Lower caps make the server transcode; Original is bit-exact"
-    value={settings.current.maxBitrate === null ? 'original' : String(settings.current.maxBitrate)}
-    {options}
-    onchange={(v) => void settings.setMaxBitrate(v === 'original' ? null : Number(v))}
+    value={bitrateValue(settings.current.maxBitrate)}
+    options={BITRATE_OPTIONS}
+    onchange={(v) => void settings.setMaxBitrate(parseBitrate(v))}
   />
   <SelectRow
     label="DSD playback"
