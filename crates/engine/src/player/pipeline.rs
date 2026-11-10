@@ -8,6 +8,7 @@ use crate::decode::{Decoder, DsdPlan, TrackInfo};
 use crate::source;
 use std::collections::VecDeque;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
@@ -37,6 +38,8 @@ pub struct Pipeline {
     shared: Arc<(Mutex<Shared>, Condvar)>,
     /// Signalled when the queue gains data.
     ready: Arc<Condvar>,
+    /// Tells a source blocked on the download to give up when the pipeline is dropped.
+    cancel: Arc<AtomicBool>,
 }
 
 /// Seconds of audio decoded ahead.
@@ -52,12 +55,13 @@ impl Pipeline {
             Condvar::new(),
         ));
         let ready = Arc::new(Condvar::new());
-        let (s, r) = (shared.clone(), ready.clone());
+        let cancel = Arc::new(AtomicBool::new(false));
+        let (s, r, c) = (shared.clone(), ready.clone(), cancel.clone());
         std::thread::Builder::new()
             .name("rayla-decode".into())
-            .spawn(move || run(req, cache_dir, plan, s, r))
+            .spawn(move || run(req, cache_dir, plan, s, r, c))
             .expect("spawn decode thread");
-        Pipeline { shared, ready }
+        Pipeline { shared, ready, cancel }
     }
 
     /// Next message, waiting up to `timeout`.
@@ -93,6 +97,7 @@ impl Pipeline {
 
 impl Drop for Pipeline {
     fn drop(&mut self) {
+        self.cancel.store(true, Ordering::Relaxed);
         let (m, space) = &*self.shared;
         m.lock().unwrap().cancel = true;
         space.notify_all();
@@ -105,6 +110,7 @@ fn run(
     plan: DsdPlan,
     shared: Arc<(Mutex<Shared>, Condvar)>,
     ready: Arc<Condvar>,
+    abort: Arc<AtomicBool>,
 ) {
     let (m, space) = &*shared;
     let post = |msg: Msg, epoch: Option<u64>| {
@@ -133,6 +139,7 @@ fn run(
         &headers,
         &cache_dir,
         &req.id,
+        Some(abort),
     )
     .and_then(|(src, ext)| Decoder::open(src, ext.as_deref(), &plan));
     let mut dec = match opened {

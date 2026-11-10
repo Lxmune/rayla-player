@@ -340,6 +340,16 @@ fn missing_file_reports_error() {
 
 // ---- HTTP source --------------------------------------------------------------
 
+/// How the test server misbehaves.
+#[derive(Clone, Copy, PartialEq)]
+pub(crate) enum Behavior {
+    Normal,
+    /// The first request sends only this many body bytes, then drops the connection.
+    DropFirstAfter(usize),
+    /// Ignores Range; answers 200 with a chunked body and no Content-Length.
+    Chunked,
+}
+
 pub(crate) struct TestServer {
     addr: SocketAddr,
     ranges: Arc<Mutex<Vec<String>>>,
@@ -350,6 +360,9 @@ pub(crate) struct TestServer {
 impl TestServer {
     /// Serves `body` honouring `Range`; requires `X-Token: secret`.
     pub(crate) fn start(body: Vec<u8>) -> TestServer {
+        Self::start_with(body, Behavior::Normal)
+    }
+    pub(crate) fn start_with(body: Vec<u8>, behavior: Behavior) -> TestServer {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         listener.set_nonblocking(true).unwrap();
         let addr = listener.local_addr().unwrap();
@@ -363,7 +376,7 @@ impl TestServer {
                     Ok((sock, _)) => {
                         let (b, r) = (body.clone(), r2.clone());
                         std::thread::spawn(move || {
-                            let _ = serve(sock, &b, &r);
+                            let _ = serve(sock, &b, &r, behavior);
                         });
                     }
                     Err(_) => std::thread::sleep(Duration::from_millis(2)),
@@ -392,7 +405,12 @@ impl Drop for TestServer {
     }
 }
 
-fn serve(mut sock: TcpStream, body: &[u8], log: &Mutex<Vec<String>>) -> std::io::Result<()> {
+fn serve(
+    mut sock: TcpStream,
+    body: &[u8],
+    log: &Mutex<Vec<String>>,
+    behavior: Behavior,
+) -> std::io::Result<()> {
     sock.set_nonblocking(false)?;
     let mut head = Vec::new();
     let mut b = [0u8; 1];
@@ -414,7 +432,20 @@ fn serve(mut sock: TcpStream, body: &[u8], log: &Mutex<Vec<String>>) -> std::io:
     }
     let total = body.len();
     let range = header("range");
-    log.lock().unwrap().push(range.clone().unwrap_or_default());
+    let first = {
+        let mut l = log.lock().unwrap();
+        l.push(range.clone().unwrap_or_default());
+        l.len() == 1
+    };
+    if behavior == Behavior::Chunked {
+        sock.write_all(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n")?;
+        for c in body.chunks(16 * 1024) {
+            sock.write_all(format!("{:x}\r\n", c.len()).as_bytes())?;
+            sock.write_all(c)?;
+            sock.write_all(b"\r\n")?;
+        }
+        return sock.write_all(b"0\r\n\r\n");
+    }
     let (start, end) = match range.as_deref().and_then(|r| r.strip_prefix("bytes=")) {
         Some(r) => {
             let (a, b) = r.split_once('-').unwrap();
@@ -429,6 +460,11 @@ fn serve(mut sock: TcpStream, body: &[u8], log: &Mutex<Vec<String>>) -> std::io:
     }
     resp += "\r\n";
     sock.write_all(resp.as_bytes())?;
+    if let (Behavior::DropFirstAfter(n), true) = (behavior, first) {
+        let cut = (start + n).min(end);
+        sock.write_all(&body[start..cut])?;
+        return Ok(()); // closes the socket mid-body
+    }
     sock.write_all(&body[start..end])
 }
 
@@ -467,8 +503,29 @@ fn http_sequential_read_sends_headers_and_caches() {
     assert!(HttpSource::open(&srv.url(), &[], &tmp("http-nohdr"), "x").is_err());
 }
 
+/// Poll until the source's cache entry holds every byte.
+fn wait_complete(s: &HttpSource) {
+    let t = Instant::now();
+    while !s.is_complete() {
+        assert!(t.elapsed() < Duration::from_secs(20), "download never completed");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
+/// Pre-seed a cache entry (`key` "t") with `ranges` of `data`.
+fn seed_cache(dir: &PathBuf, data: &[u8], ranges: &[(usize, usize)]) {
+    let mut file = vec![0u8; data.len()];
+    let mut meta = format!("{}\n", data.len());
+    for &(a, b) in ranges {
+        file[a..b].copy_from_slice(&data[a..b]);
+        meta += &format!("{a} {b}\n");
+    }
+    std::fs::write(dir.join("t.audio"), file).unwrap();
+    std::fs::write(dir.join("t.meta"), meta).unwrap();
+}
+
 #[test]
-fn http_seek_uses_range_requests() {
+fn http_seek_serves_exact_bytes_and_reads_cache_afterwards() {
     let data = body(300_000);
     let srv = TestServer::start(data.clone());
     let mut s = HttpSource::open(&srv.url(), &hdrs(), &tmp("http-seek"), "t").unwrap();
@@ -480,7 +537,8 @@ fn http_seek_uses_range_requests() {
     assert_eq!(read_n(&mut s, 100), data[299_900..]);
     let mut b = [0u8; 4];
     assert_eq!(s.read(&mut b).unwrap(), 0);
-    // Re-reading cached bytes needs no new request.
+    // The background download finishes the file; then nothing more is requested.
+    wait_complete(&s);
     let n = srv.requests().len();
     s.seek(SeekFrom::Start(200_000)).unwrap();
     assert_eq!(read_n(&mut s, 5000), data[200_000..205_000]);
@@ -488,22 +546,28 @@ fn http_seek_uses_range_requests() {
 }
 
 #[test]
+fn http_whole_file_is_cached_without_the_reader_reading() {
+    let data = body(500_000);
+    let mut srv = TestServer::start(data.clone());
+    let cache = tmp("http-bg");
+    let s = HttpSource::open(&srv.url(), &hdrs(), &cache, "t").unwrap();
+    wait_complete(&s); // never read a byte
+    srv.shutdown();
+    assert_eq!(std::fs::read(cache.join("t.audio")).unwrap(), data);
+    assert_eq!(srv.requests().len(), 1);
+}
+
+#[test]
 fn http_resumes_from_partial_cache_fetching_only_gaps() {
     let data = body(300_000);
     let srv = TestServer::start(data.clone());
     let cache = tmp("http-partial");
-    {
-        let mut s = HttpSource::open(&srv.url(), &hdrs(), &cache, "t").unwrap();
-        assert_eq!(read_n(&mut s, 100_000), data[..100_000]);
-    }
-    let first = srv.requests().len();
+    seed_cache(&cache, &data, &[(0, 100_000)]);
     let mut s = HttpSource::open(&srv.url(), &hdrs(), &cache, "t").unwrap();
     let mut all = Vec::new();
     s.read_to_end(&mut all).unwrap();
     assert_eq!(all, data);
-    let reqs = srv.requests();
-    assert_eq!(reqs.len(), first + 1, "{reqs:?}");
-    assert_eq!(reqs.last().unwrap(), "bytes=100000-", "only the missing tail may be fetched");
+    assert_eq!(srv.requests(), vec!["bytes=100000-".to_string()], "only the missing tail");
 }
 
 #[test]
@@ -511,19 +575,123 @@ fn http_gap_in_the_middle_is_bounded() {
     let data = body(300_000);
     let srv = TestServer::start(data.clone());
     let cache = tmp("http-gap");
-    {
-        let mut s = HttpSource::open(&srv.url(), &hdrs(), &cache, "t").unwrap();
-        assert_eq!(read_n(&mut s, 50_000), data[..50_000]);
-        s.seek(SeekFrom::Start(150_000)).unwrap();
-        assert_eq!(read_n(&mut s, 150_000), data[150_000..]);
-    }
-    let before = srv.requests().len();
+    seed_cache(&cache, &data, &[(0, 50_000), (150_000, 300_000)]);
     let mut s = HttpSource::open(&srv.url(), &hdrs(), &cache, "t").unwrap();
     let mut all = Vec::new();
     s.read_to_end(&mut all).unwrap();
     assert_eq!(all, data);
+    assert_eq!(srv.requests(), vec!["bytes=50000-149999".to_string()]);
+}
+
+#[test]
+fn http_dropped_connection_is_retried_to_correct_bytes() {
+    let data = body(400_000);
+    let srv = TestServer::start_with(data.clone(), Behavior::DropFirstAfter(100_000));
+    let cache = tmp("http-flaky");
+    let mut s = HttpSource::open(&srv.url(), &hdrs(), &cache, "t").unwrap();
+    let mut all = Vec::new();
+    s.read_to_end(&mut all).unwrap();
+    assert_eq!(all, data);
+    wait_complete(&s);
+    assert_eq!(std::fs::read(cache.join("t.audio")).unwrap(), data);
     let reqs = srv.requests();
-    assert_eq!(&reqs[before..], &["bytes=50000-149999".to_string()]);
+    assert_eq!(reqs.len(), 2, "{reqs:?}");
+    assert!(reqs[1].starts_with("bytes=1"), "resumes after the cached part: {reqs:?}");
+}
+
+#[test]
+fn http_chunked_200_without_length_completes_at_eof() {
+    use symphonia::core::io::MediaSource;
+    let data = body(200_000);
+    let srv = TestServer::start_with(data.clone(), Behavior::Chunked);
+    let cache = tmp("http-chunked");
+    let mut s = HttpSource::open(&srv.url(), &hdrs(), &cache, "t").unwrap();
+    let mut all = Vec::new();
+    s.read_to_end(&mut all).unwrap();
+    assert_eq!(all, data);
+    wait_complete(&s);
+    assert_eq!(s.byte_len(), Some(200_000));
+    assert!(s.is_seekable());
+    assert_eq!(std::fs::read(cache.join("t.audio")).unwrap(), data);
+}
+
+#[test]
+fn cache_key_differs_per_url_and_keeps_the_id() {
+    use crate::source::cache_key;
+    let a = cache_key("jf-1", "http://h/a?x=1");
+    let b = cache_key("jf-1", "http://h/a?x=2");
+    assert_ne!(a, b);
+    assert_eq!(a, cache_key("jf-1", "http://h/a?x=1"));
+    assert!(a.starts_with("jf-1-") && a.len() == "jf-1-".len() + 16, "{a}");
+}
+
+#[test]
+fn prefetch_downloads_whole_track_in_background() {
+    let data = body(300_000);
+    let srv = TestServer::start(data.clone());
+    let cache = tmp("prefetch");
+    let req = TrackRequest {
+        id: "pf-1".into(),
+        entry_id: "e".into(),
+        url: srv.url(),
+        headers: vec![HttpHeader { name: "X-Token".into(), value: "secret".into() }],
+        local_path: None,
+        album_id: None,
+        fallback_gain_db: None,
+    };
+    let key = crate::source::cache_key(&req.id, &req.url);
+    let pf = crate::source::Prefetcher::new(cache.clone());
+    pf.set(vec![req]);
+    let t = Instant::now();
+    let file = cache.join(format!("{key}.audio"));
+    let meta = cache.join(format!("{key}.meta"));
+    // The meta file is written when the entry completes.
+    while !std::fs::read_to_string(&meta).is_ok_and(|m| m.contains("0 300000")) {
+        assert!(t.elapsed() < Duration::from_secs(20), "prefetch never completed");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(std::fs::read(&file).unwrap(), data);
+    // Opening it afterwards needs no new request.
+    let n = srv.requests().len();
+    let mut s = HttpSource::open(&srv.url(), &hdrs(), &cache, &key).unwrap();
+    let mut all = Vec::new();
+    s.read_to_end(&mut all).unwrap();
+    assert_eq!(all, data);
+    assert_eq!(srv.requests().len(), n);
+}
+
+#[test]
+fn download_reports_average_throughput_on_completion() {
+    let data = body(600_000);
+    let srv = TestServer::start(data);
+    let got: Arc<Mutex<Vec<(String, u64)>>> = Arc::default();
+    let g = got.clone();
+    crate::source::set_throughput_hook(Arc::new(move |id, bps| {
+        g.lock().unwrap().push((id.to_string(), bps));
+    }));
+    let s = HttpSource::open(&srv.url(), &hdrs(), &tmp("http-tp"), "tp-track").unwrap();
+    wait_complete(&s);
+    let t = Instant::now();
+    while !got.lock().unwrap().iter().any(|(id, bps)| id == "tp-track" && *bps > 0) {
+        assert!(t.elapsed() < Duration::from_secs(5), "no throughput event");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
+#[test]
+fn prune_removes_oldest_unused_entries_first() {
+    let dir = tmp("prune");
+    for (i, name) in ["old", "mid", "new"].iter().enumerate() {
+        let p = dir.join(format!("{name}.audio"));
+        std::fs::write(&p, vec![0u8; 1000]).unwrap();
+        std::fs::write(dir.join(format!("{name}.meta")), "1000\n0 1000\n").unwrap();
+        let f = std::fs::OpenOptions::new().write(true).open(&p).unwrap();
+        f.set_modified(std::time::SystemTime::UNIX_EPOCH + Duration::from_secs(100 + i as u64))
+            .unwrap();
+    }
+    crate::source::prune_to(&dir, 2500);
+    assert!(!dir.join("old.audio").exists() && !dir.join("old.meta").exists());
+    assert!(dir.join("mid.audio").exists() && dir.join("new.audio").exists());
 }
 
 #[test]

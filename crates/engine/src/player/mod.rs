@@ -8,6 +8,7 @@ pub(crate) mod tests;
 
 use crate::api::engine::*;
 use crate::output::{self, Backend};
+use crate::source::{self, Prefetcher};
 use anyhow::{anyhow, Result};
 use engine::{Cmd, Engine};
 use std::path::PathBuf;
@@ -16,6 +17,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 static ENGINE: OnceLock<Engine> = OnceLock::new();
 static BACKEND: OnceLock<Arc<dyn Backend>> = OnceLock::new();
 type Handler = Arc<dyn Fn(EngineEvent) + Send + Sync>;
+static PREFETCH: OnceLock<Prefetcher> = OnceLock::new();
 static SINK: Mutex<Option<Handler>> = Mutex::new(None);
 
 fn backend() -> Arc<dyn Backend> {
@@ -31,6 +33,25 @@ fn engine() -> Result<&'static Engine> {
 pub fn init(cache_dir: String) -> Result<()> {
     let dir = PathBuf::from(cache_dir);
     std::fs::create_dir_all(&dir)?;
+    // Download speed measured by the cache downloaders becomes events.
+    source::set_throughput_hook(Arc::new(|track_id, bps| {
+        let handler = SINK.lock().unwrap().clone();
+        if let Some(h) = handler {
+            h(EngineEvent {
+                kind: EventKind::Throughput,
+                state: PlaybackState::Stopped,
+                track_id: Some(track_id.to_string()),
+                entry_id: None,
+                position_ms: 0,
+                duration_ms: 0,
+                signal_path: None,
+                message: None,
+                throughput_bps: bps,
+            });
+        }
+    }));
+    source::prune_cache(&dir);
+    PREFETCH.get_or_init(|| Prefetcher::new(dir.clone()));
     ENGINE.get_or_init(|| {
         let emit: engine::EmitFn = Arc::new(|e| {
             let handler = SINK.lock().unwrap().clone();
@@ -61,6 +82,14 @@ pub fn load(track: TrackRequest, start_playing: bool) -> Result<()> {
 
 pub fn set_next(track: Option<TrackRequest>) -> Result<()> {
     engine()?.send(Cmd::SetNext(track))
+}
+
+pub fn prefetch(tracks: Vec<TrackRequest>) -> Result<()> {
+    PREFETCH
+        .get()
+        .ok_or_else(|| anyhow!("engine not initialised; call init_engine first"))?
+        .set(tracks);
+    Ok(())
 }
 
 pub fn play() -> Result<()> {

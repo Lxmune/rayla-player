@@ -54,6 +54,11 @@ fn engine_set_next(track: Option<TrackRequest>) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn engine_prefetch(tracks: Vec<TrackRequest>) -> Result<(), String> {
+    api::prefetch(tracks).map_err(err)
+}
+
+#[tauri::command]
 fn engine_play() -> Result<(), String> {
     api::play().map_err(err)
 }
@@ -207,6 +212,7 @@ pub fn run() {
             engine_set_output,
             engine_load,
             engine_set_next,
+            engine_prefetch,
             engine_play,
             engine_pause,
             engine_stop,

@@ -183,6 +183,8 @@ pub enum EventKind {
     SignalPathChanged,
     /// `message` describes a failure, for `track_id` when it is set.
     Error,
+    /// Network rate (`throughput_bps`) measured while fetching `track_id` into the cache.
+    Throughput,
 }
 
 /// Flat event record; which fields are meaningful depends on `kind`.
@@ -200,6 +202,9 @@ pub struct EngineEvent {
     pub duration_ms: u64,
     pub signal_path: Option<SignalPath>,
     pub message: Option<String>,
+    /// Network rate in bits/s; set on `Throughput` events, else 0.
+    #[serde(default)]
+    pub throughput_bps: u64,
 }
 
 /// Start the engine. `cache_dir` holds stream cache and downloads.
@@ -232,6 +237,14 @@ pub fn load(track: TrackRequest, start_playing: bool) -> anyhow::Result<()> {
 /// Track to continue with gaplessly when the current one ends.
 pub fn set_next(track: Option<TrackRequest>) -> anyhow::Result<()> {
     player::set_next(track)
+}
+
+/// Download these tracks completely into the stream cache in the background,
+/// in order, one at a time. Each call replaces the previous list; tracks no
+/// longer listed are dropped (their download is aborted unless playback uses
+/// the same entry). Complete entries and tracks with `local_path` are skipped.
+pub fn prefetch(tracks: Vec<TrackRequest>) -> anyhow::Result<()> {
+    player::prefetch(tracks)
 }
 
 pub fn play() -> anyhow::Result<()> {
@@ -320,6 +333,7 @@ mod contract_tests {
                 bit_perfect: false,
             }),
             message: None,
+            throughput_bps: 0,
         };
         let v = serde_json::to_value(&e).unwrap();
         assert_eq!(
@@ -333,7 +347,7 @@ mod contract_tests {
                     "outputSampleRate": 48000, "outputBitDepth": 24,
                     "exclusive": true, "bitPerfect": false
                 },
-                "message": null
+                "message": null, "throughputBps": 0
             })
         );
     }

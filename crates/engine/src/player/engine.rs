@@ -276,6 +276,7 @@ impl Core {
             duration_ms,
             signal_path: None,
             message: None,
+            throughput_bps: 0,
         }
     }
 
@@ -1005,6 +1006,7 @@ impl Core {
                     duration_ms: dur,
                     signal_path: None,
                     message: None,
+                    throughput_bps: 0,
                 });
             }
             Some(msg) => self.emit_error(Some(&ended.req), msg),
