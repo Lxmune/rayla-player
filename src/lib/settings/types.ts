@@ -53,7 +53,7 @@ export interface AppearanceSettings {
   reduceMotion: boolean;
 }
 
-export const START_SCREENS = ['home', 'albums', 'artists', 'playlists', 'favorites'] as const;
+export const START_SCREENS = ['home', 'discover', 'albums', 'artists', 'playlists', 'favorites'] as const;
 export type StartScreen = (typeof START_SCREENS)[number];
 
 export interface BehaviorSettings {
@@ -62,12 +62,27 @@ export interface BehaviorSettings {
   startScreen: StartScreen;
 }
 
+export const TRANSCODE_CODECS = ['aac', 'mp3'] as const;
+/** What the server transcodes to when the bitrate cap applies (AAC is ADTS). */
+export type TranscodeCodec = (typeof TRANSCODE_CODECS)[number];
+
+export const MAX_PREFETCH_TRACKS = 5;
+
+export interface StreamingSettings {
+  codec: TranscodeCodec;
+  /** Lower the cap for upcoming tracks while the measured connection is slow. */
+  adaptive: boolean;
+  /** Queue tracks after the next one downloaded fully ahead of time, 0..MAX_PREFETCH_TRACKS. */
+  prefetchTracks: number;
+}
+
 export interface AppSettings {
   /** null = system default device. */
   outputDeviceId: string | null;
   exclusive: boolean;
   /** Streaming bitrate cap in bits/s; null = original file. */
   maxBitrate: number | null;
+  streaming: StreamingSettings;
   dsp: DspConfig;
   themeMode: ThemeMode;
   appearance: AppearanceSettings;
@@ -135,10 +150,17 @@ export const DEFAULT_BEHAVIOR: BehaviorSettings = {
   startScreen: 'home',
 };
 
+export const DEFAULT_STREAMING: StreamingSettings = {
+  codec: 'aac',
+  adaptive: false,
+  prefetchTracks: 2,
+};
+
 export const DEFAULT_SETTINGS: AppSettings = {
   outputDeviceId: null,
   exclusive: false,
   maxBitrate: null,
+  streaming: DEFAULT_STREAMING,
   dsp: DEFAULT_DSP,
   themeMode: 'dark',
   appearance: DEFAULT_APPEARANCE,

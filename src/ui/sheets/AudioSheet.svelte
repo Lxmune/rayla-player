@@ -5,13 +5,8 @@
   import { getRouter, getUi } from '../shell/router.svelte';
   import { bitPerfectBlockers } from '../settings/bitperfect';
   import CompressorRows from '../settings/CompressorRows.svelte';
-  import {
-    BITRATE_OPTIONS,
-    CROSSFEED_OPTIONS,
-    REPLAY_GAIN_OPTIONS,
-    bitrateValue,
-    parseBitrate,
-  } from '../settings/options';
+  import { CROSSFEED_OPTIONS, REPLAY_GAIN_OPTIONS } from '../settings/options';
+  import StreamingRows from '../settings/StreamingRows.svelte';
   import SelectRow from '../settings/SelectRow.svelte';
   import ToggleRow from '../settings/ToggleRow.svelte';
   import '../settings/settings.css';
@@ -23,7 +18,7 @@
   const router = getRouter();
   const dsp = $derived(settings.current.dsp);
   const bands = $derived(dsp.eqBands.length);
-  const blockers = $derived(bitPerfectBlockers(dsp, settings.current.maxBitrate));
+  const blockers = $derived(bitPerfectBlockers(dsp, getApp().core.player.effectiveMaxBitrate));
 
   function allSettings() {
     onclose();
@@ -34,13 +29,7 @@
 
 <div class="settings audio">
   <h3>Quality</h3>
-  <SelectRow
-    label="Streaming quality"
-    hint="Takes effect from the next track"
-    value={bitrateValue(settings.current.maxBitrate)}
-    options={BITRATE_OPTIONS}
-    onchange={(v) => void settings.setMaxBitrate(parseBitrate(v))}
-  />
+  <StreamingRows qualityLabel="Streaming quality" qualityHint="Takes effect from the next track" />
 
   <h3>Effects</h3>
   <SelectRow

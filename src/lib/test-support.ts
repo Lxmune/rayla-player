@@ -172,6 +172,7 @@ export class FakeEngine {
       durationMs: 0,
       signalPath: null,
       message: null,
+      throughputBps: 0,
       ...o,
     };
   }
@@ -229,6 +230,17 @@ export class FakeEngine {
     this.nextRequests.push(t);
     if (t) this.requests.push(t);
   };
+  /** Every prefetch list sent, oldest first (kept out of `calls`). */
+  readonly prefetchCalls: TrackRequest[][] = [];
+  get lastPrefetchIds(): string[] | null {
+    return this.prefetchCalls[this.prefetchCalls.length - 1]?.map((r) => r.id) ?? null;
+  }
+  readonly prefetch = async (tracks: TrackRequest[]) => {
+    this.prefetchCalls.push(tracks);
+  };
+  throughput(bps: number, id = 'x') {
+    this.emit(this.event('throughput', id, { throughputBps: bps }));
+  }
   readonly play = async () => {
     this.calls.push('play');
   };

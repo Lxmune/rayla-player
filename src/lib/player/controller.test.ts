@@ -244,6 +244,7 @@ describe('PlayerController', () => {
       durationMs: 0,
       signalPath: path,
       message: null,
+      throughputBps: 0,
     });
     expect(t.player.signalPath).toEqual(path);
     await t.player.next();
@@ -541,6 +542,72 @@ describe('PlayerController', () => {
       t.engine.calls.length = 0;
       await t.player.play();
       expect(t.engine.calls.some((c) => c.startsWith('seek'))).toBe(false);
+    });
+  });
+
+  describe('prefetch and adaptive quality', () => {
+    const many = ['a', 'b', 'c', 'd', 'e', 'f'].map((i) => track(i));
+
+    it('prefetches the tracks after the armed next one', async () => {
+      await t.player.playQueue(many, { startIndex: 0 });
+      expect(t.engine.lastNextId).toBe('b');
+      expect(t.engine.lastPrefetchIds).toEqual(['c', 'd']); // default 2
+      await t.settings.updateStreaming({ prefetchTracks: 4 });
+      await flush();
+      expect(t.engine.lastPrefetchIds).toEqual(['c', 'd', 'e', 'f']);
+      await t.player.jumpTo(3);
+      expect(t.engine.lastPrefetchIds).toEqual(['f']);
+    });
+
+    it('wraps with repeat all, is empty for repeat one, off and stop', async () => {
+      await t.player.playQueue(many, { startIndex: 4 });
+      expect(t.engine.lastPrefetchIds).toEqual([]);
+      await t.player.setRepeat('all');
+      expect(t.engine.lastPrefetchIds).toEqual(['a', 'b']);
+      await t.player.setRepeat('one');
+      expect(t.engine.lastPrefetchIds).toEqual([]);
+      await t.player.setRepeat('off');
+      await t.settings.updateStreaming({ prefetchTracks: 0 });
+      expect(t.engine.lastPrefetchIds).toEqual([]);
+      await t.settings.updateStreaming({ prefetchTracks: 3 });
+      await t.player.jumpTo(0);
+      expect(t.engine.lastPrefetchIds).toEqual(['c', 'd', 'e']);
+      await t.player.stop();
+      expect(t.engine.lastPrefetchIds).toEqual([]);
+    });
+
+    it('skips downloaded tracks and does not resend identical lists', async () => {
+      t.downloads.pathFor = (id: string) => (id === 'd' ? '/x/d.flac' : null);
+      await t.player.playQueue(many, { startIndex: 0 });
+      expect(t.engine.lastPrefetchIds).toEqual(['c']);
+      const n = t.engine.prefetchCalls.length;
+      await t.player.removeAt(5);
+      expect(t.engine.prefetchCalls.length).toBe(n);
+    });
+
+    it('lowers the cap for upcoming tracks when adaptive and slow', async () => {
+      await t.settings.updateStreaming({ adaptive: true, codec: 'aac' });
+      await t.player.playQueue(many, { startIndex: 0 });
+      expect(t.engine.lastNext?.url).toContain('static=true');
+      t.engine.throughput(0);
+      expect(t.player.throughputBps).toBeNull();
+      t.engine.throughput(800_000);
+      await flush();
+      expect(t.player.effectiveMaxBitrate).toBe(192_000);
+      const url = new URL(t.engine.lastNext?.url ?? '');
+      expect(url.searchParams.get('MaxStreamingBitrate')).toBe('192000');
+      expect(url.searchParams.get('AudioCodec')).toBe('aac');
+      expect(t.engine.lastPrefetchIds).toEqual(['c', 'd']);
+      expect(new URL(t.engine.prefetchCalls.at(-1)?.[0]?.url ?? '').searchParams.get('MaxStreamingBitrate')).toBe('192000');
+      // load of the current track also uses the lowered cap
+      await t.player.jumpTo(2);
+      expect(t.engine.loaded.at(-1)?.url).toContain('MaxStreamingBitrate=192000');
+    });
+
+    it('adaptive off ignores throughput', async () => {
+      await t.player.playQueue(many, { startIndex: 0 });
+      t.engine.throughput(50_000);
+      expect(t.player.effectiveMaxBitrate).toBeNull();
     });
   });
 });

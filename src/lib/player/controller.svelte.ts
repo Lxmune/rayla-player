@@ -19,6 +19,7 @@ import {
 } from '../jellyfin/models';
 import type { AppSettings } from '../settings/types';
 import type { TrackMeta } from '../track-meta';
+import { effectiveMaxBitrate, ewma } from './adaptive';
 import type { EngineErrors } from './errors.svelte';
 
 export type RepeatMode = 'off' | 'all' | 'one';
@@ -32,7 +33,7 @@ export interface QueueEntry {
 
 export type PlayerEngine = Pick<
   Ipc,
-  'load' | 'setNext' | 'play' | 'pause' | 'stop' | 'seek' | 'onEngineEvent'
+  'load' | 'setNext' | 'prefetch' | 'play' | 'pause' | 'stop' | 'seek' | 'onEngineEvent'
 >;
 
 export interface PlayerSettings {
@@ -97,6 +98,8 @@ export class PlayerController {
     this.index >= 0 && this.index < this.queue.length ? (this.queue[this.index] ?? null) : null,
   );
   isPlaying = $derived(this.playback === 'playing');
+  /** Smoothed download rate in bits/s from `throughput` events; null until measured. */
+  throughputBps = $state<number | null>(null);
   /** Index that plays after the current track ends on its own. */
   nextIndex = $derived.by<number | null>(() => {
     if (this.index < 0 || this.queue.length === 0) return null;
@@ -106,6 +109,12 @@ export class PlayerController {
   });
 
   private readonly deps: PlayerDeps;
+  /**
+   * Bitrate cap for upcoming tracks: the user's cap, lowered by the measured
+   * connection speed when adaptive streaming is on. null = original file.
+   */
+  effectiveMaxBitrate = $derived.by<number | null>(() => this.effectiveCap(this.deps.settings.current));
+  private lastPrefetchKey: string | null = null;
   private readonly random: () => number;
   private readonly now: () => number;
   private original: QueueEntry[] = [];
@@ -136,10 +145,23 @@ export class PlayerController {
     this.random = deps.random ?? Math.random;
     this.now = deps.now ?? Date.now;
     this.lastProgress = this.now();
-    // A new bitrate cap changes the URL of the upcoming track.
+    // A new effective bitrate cap or codec changes the URL of upcoming tracks; the
+    // prefetch depth changes which ones are fetched ahead.
     this.unsubSettings = deps.settings.onChange((s, prev) => {
-      if (s.maxBitrate !== prev.maxBitrate && this.current !== null) void this.armNext();
+      if (this.current === null) return;
+      if (
+        this.effectiveCap(s) !== this.effectiveCap(prev) ||
+        s.streaming.codec !== prev.streaming.codec
+      ) {
+        void this.armNext();
+      } else if (s.streaming.prefetchTracks !== prev.streaming.prefetchTracks) {
+        void this.syncPrefetch();
+      }
     });
+  }
+
+  private effectiveCap(s: AppSettings, throughput = this.throughputBps): number | null {
+    return effectiveMaxBitrate(s.maxBitrate, s.streaming.adaptive, throughput);
   }
 
   /** Subscribes to engine events. Idempotent; call once at startup. */
@@ -404,6 +426,7 @@ export class PlayerController {
     this.reportStopped();
     this.playback = 'stopped';
     this.positionMs = 0;
+    void this.syncPrefetch(true);
     return this.run(() => this.deps.engine.stop());
   }
 
@@ -420,6 +443,7 @@ export class PlayerController {
     this.currentEntryId = null;
     this.repeatEntryId = null;
     this.pendingSeekMs = null;
+    void this.syncPrefetch();
     return this.run(() => this.deps.engine.stop());
   }
 
@@ -471,7 +495,10 @@ export class PlayerController {
     return {
       id: item.id,
       entryId,
-      url: client.streamUrl(item.id, { maxBitrate: this.deps.settings.current.maxBitrate }),
+      url: client.streamUrl(item.id, {
+        maxBitrate: this.effectiveMaxBitrate,
+        codec: this.deps.settings.current.streaming.codec,
+      }),
       headers: client.authHeaders(),
       // A fully downloaded original always wins over streaming.
       localPath: this.deps.downloads.pathFor(item.id),
@@ -496,9 +523,13 @@ export class PlayerController {
       return Promise.resolve();
     }
     this.reportStart(entry.item);
+    const next = this.nextRequest();
+    const ahead = this.prefetchRequests();
+    this.lastPrefetchKey = prefetchKey(ahead);
     return this.run(async () => {
       await this.deps.engine.load(request, startPlaying);
-      await this.deps.engine.setNext(this.nextRequest());
+      await this.deps.engine.setNext(next);
+      await this.deps.engine.prefetch(ahead);
     });
   }
 
@@ -511,7 +542,44 @@ export class PlayerController {
   private armNext(): Promise<void> {
     // Built now, from the queue as it is now, not when the call runs.
     const request = this.nextRequest();
-    return this.run(() => this.deps.engine.setNext(request));
+    const done = this.run(() => this.deps.engine.setNext(request));
+    void this.syncPrefetch();
+    return done;
+  }
+
+  /**
+   * The `prefetchTracks` queue tracks after the armed next one, in the order
+   * they will play. Downloaded tracks are skipped (they are local files).
+   */
+  private prefetchRequests(): TrackRequest[] {
+    const count = this.deps.settings.current.streaming.prefetchTracks;
+    const n = this.nextIndex;
+    if (count <= 0 || n === null || n === this.index || this.index < 0) return [];
+    const out: TrackRequest[] = [];
+    const seen = new Set<string>();
+    const len = this.queue.length;
+    for (let step = 1; step <= count; step++) {
+      let i: number = n + step;
+      if (i >= len) {
+        if (this.repeat !== 'all') break;
+        i -= len;
+      }
+      if (i === this.index || i === n) break;
+      const req = this.request(i, this.entryId(i));
+      if (!req || req.localPath !== null || seen.has(req.id)) continue;
+      seen.add(req.id);
+      out.push(req);
+    }
+    return out;
+  }
+
+  /** Tells the engine what to download ahead; an identical list is not resent. */
+  private syncPrefetch(empty = false): Promise<void> {
+    const list = empty || this.current === null ? [] : this.prefetchRequests();
+    const key = prefetchKey(list);
+    if (key === this.lastPrefetchKey) return Promise.resolve();
+    this.lastPrefetchKey = key;
+    return this.run(() => this.deps.engine.prefetch(list));
   }
 
   private shuffled(list: readonly QueueEntry[], skip: number): QueueEntry[] {
@@ -558,9 +626,16 @@ export class PlayerController {
           this.reportStopped();
           this.playback = 'stopped';
           this.positionMs = 0;
+          void this.syncPrefetch(true);
           void this.run(() => this.deps.engine.stop());
         }
         break;
+      case 'throughput': {
+        const before = this.effectiveMaxBitrate;
+        this.throughputBps = ewma(this.throughputBps, e.throughputBps);
+        if (this.current !== null && this.effectiveMaxBitrate !== before) void this.armNext();
+        break;
+      }
       case 'signalPathChanged':
         this.signalPath = e.signalPath;
         break;
@@ -616,7 +691,7 @@ export class PlayerController {
 
   private transcodingFor(item: BaseItem): boolean {
     if (this.deps.downloads.isDownloaded(item.id)) return false;
-    return willTranscode(item, this.deps.settings.current.maxBitrate);
+    return willTranscode(item, this.effectiveMaxBitrate);
   }
 
   /** Fields remote controllers show: volume, repeat/shuffle, queue. */
@@ -669,6 +744,10 @@ export class PlayerController {
     const transcoding = this.reportedTranscoding;
     this.fire((c) => c.reportPlaybackStopped(id, pos, { transcoding }));
   }
+}
+
+function prefetchKey(list: readonly TrackRequest[]): string {
+  return list.map((r) => `${r.entryId}|${r.url}`).join('\n');
 }
 
 function clamp(v: number, lo: number, hi: number): number {

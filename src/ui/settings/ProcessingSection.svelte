@@ -30,7 +30,7 @@
     }
   }
 
-  const blockers = $derived(bitPerfectBlockers(dsp, settings.current.maxBitrate));
+  const blockers = $derived(bitPerfectBlockers(dsp, getApp().core.player.effectiveMaxBitrate));
 </script>
 
 <Section title="Processing" id="processing">

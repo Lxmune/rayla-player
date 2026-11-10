@@ -22,6 +22,7 @@ function build(android?: { enabled: boolean; bridge: any }) {
     setDsp: engine.setDsp,
     load: engine.load,
     setNext: engine.setNext,
+    prefetch: engine.prefetch,
     play: engine.play,
     pause: engine.pause,
     stop: engine.stop,

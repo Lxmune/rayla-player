@@ -8,7 +8,7 @@
   const transcoded = $derived(
     current !== null &&
       !core.downloads.isDownloaded(current.id) &&
-      willTranscode(current, core.settings.current.maxBitrate),
+      willTranscode(current, core.player.effectiveMaxBitrate),
   );
 
   const fmt = (bits: number, rate: number) =>

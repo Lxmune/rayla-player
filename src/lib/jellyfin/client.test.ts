@@ -56,6 +56,16 @@ describe('JellyfinClient', () => {
     expect(capped.searchParams.get('TranscodingContainer')).toBe('mp3');
   });
 
+  it('transcodes to the chosen codec', () => {
+    const client = fakeClient(new FakeHttp());
+    const aac = new URL(client.streamUrl('x', { maxBitrate: 96000, codec: 'aac' }));
+    expect(aac.searchParams.get('TranscodingContainer')).toBe('aac');
+    expect(aac.searchParams.get('AudioCodec')).toBe('aac');
+    const mp3 = new URL(client.streamUrl('x', { maxBitrate: 96000, codec: 'mp3' }));
+    expect(mp3.searchParams.get('AudioCodec')).toBe('mp3');
+    expect(client.streamUrl('x', { codec: 'aac' })).toBe('https://jf.test/Audio/x/stream?static=true');
+  });
+
   it('image, download URLs and auth headers', () => {
     const client = fakeClient(new FakeHttp());
     expect(client.imageUrl('i1', { maxWidth: 300, tag: 'tg' })).toBe(

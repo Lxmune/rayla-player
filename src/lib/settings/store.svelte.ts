@@ -21,13 +21,17 @@ import {
   DEFAULT_DISCORD,
   DEFAULT_DSP,
   DEFAULT_SETTINGS,
+  DEFAULT_STREAMING,
+  MAX_PREFETCH_TRACKS,
   START_SCREENS,
+  TRANSCODE_CODECS,
   type AppearanceSettings,
   type AppSettings,
   type BehaviorSettings,
   type Density,
   type DiscordButtonTemplate,
   type DiscordSettings,
+  type StreamingSettings,
   type ThemeMode,
 } from './types';
 
@@ -156,6 +160,16 @@ export function parseBehavior(j: unknown): BehaviorSettings {
   };
 }
 
+export function parseStreaming(j: unknown): StreamingSettings {
+  const o: Json = isObj(j) ? j : {};
+  const d = DEFAULT_STREAMING;
+  return {
+    codec: enumOf(TRANSCODE_CODECS, o.codec, d.codec),
+    adaptive: bool(o.adaptive, d.adaptive),
+    prefetchTracks: Math.trunc(clampNum(o.prefetchTracks, 0, MAX_PREFETCH_TRACKS, d.prefetchTracks)),
+  };
+}
+
 export function parseSettings(j: unknown): AppSettings {
   const o: Json = isObj(j) ? j : {};
   const maxBitrate = num(o.maxBitrate);
@@ -163,6 +177,7 @@ export function parseSettings(j: unknown): AppSettings {
     outputDeviceId: strOrNull(o.outputDeviceId),
     exclusive: bool(o.exclusive, DEFAULT_SETTINGS.exclusive),
     maxBitrate: maxBitrate === null ? null : Math.trunc(maxBitrate),
+    streaming: parseStreaming(o.streaming),
     dsp: parseDsp(o.dsp),
     themeMode: enumOf(THEMES, o.themeMode, 'dark'),
     appearance: parseAppearance(o.appearance),
@@ -267,6 +282,11 @@ export class SettingsStore {
 
   async setMaxBitrate(bitsPerSecond: number | null): Promise<void> {
     this.set({ ...this.current, maxBitrate: bitsPerSecond });
+    this.save();
+  }
+
+  async updateStreaming(change: Change<StreamingSettings>): Promise<void> {
+    this.set({ ...this.current, streaming: parseStreaming(applyChange(this.current.streaming, change)) });
     this.save();
   }
 

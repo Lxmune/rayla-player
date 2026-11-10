@@ -135,7 +135,7 @@ describe('PlayerBar', () => {
     expect(screen.queryByText('Bit-perfect')).toBeNull();
     engine.emit({
       kind: 'signalPathChanged', state: 'playing', trackId: 't1', entryId: null, positionMs: 0,
-      durationMs: 0, message: null,
+      durationMs: 0, message: null, throughputBps: 0,
       signalPath: {
         codec: 'flac', sourceSampleRate: 96000, sourceBitDepth: 24, channels: 2, stages: [],
         deviceName: 'DAC', outputSampleRate: 96000, outputBitDepth: 24, exclusive: true, bitPerfect: true,

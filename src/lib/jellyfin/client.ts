@@ -3,6 +3,7 @@
 
 import type { HttpHeader } from '../ipc';
 import type { HttpFetch } from '../platform';
+import type { TranscodeCodec } from '../settings/types';
 import {
   DIRECT_STREAM_CONTAINERS,
   parseAuthResult,
@@ -530,17 +531,22 @@ export class JellyfinClient {
    * The original file by default; with a bitrate cap, the universal endpoint,
    * which lets the server decide between direct stream and transcode.
    */
-  streamUrl(itemId: string, opts: { maxBitrate?: number | null } = {}): string {
+  streamUrl(
+    itemId: string,
+    opts: { maxBitrate?: number | null; codec?: TranscodeCodec } = {},
+  ): string {
     const cap = opts.maxBitrate ?? null;
+    const codec = opts.codec ?? 'mp3';
     if (cap === null) return `${this.baseUrl}/Audio/${itemId}/stream?static=true`;
     return this.url(`/Audio/${itemId}/universal`, {
       UserId: this.userId,
       DeviceId: this.deviceId,
       MaxStreamingBitrate: cap,
       Container: DIRECT_STREAM_CONTAINERS.join(','),
-      TranscodingContainer: 'mp3',
+      // AAC goes out as ADTS (container "aac"), which streams without a seekable header.
+      TranscodingContainer: codec,
       TranscodingProtocol: 'http',
-      AudioCodec: 'mp3',
+      AudioCodec: codec,
     });
   }
 

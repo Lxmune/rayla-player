@@ -14,7 +14,7 @@
   const rows = $derived([
     ...techInfoRows(item, {
       path,
-      maxBitrate: core.settings.current.maxBitrate,
+      maxBitrate: core.player.effectiveMaxBitrate,
       downloaded: core.downloads.pathFor(item.id) !== null,
     }),
     ['Item ID', item.id] as [string, string],

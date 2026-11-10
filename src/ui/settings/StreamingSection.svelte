@@ -3,19 +3,13 @@
   import type { DsdMode } from '../../lib/ipc';
   import Section from './Section.svelte';
   import SelectRow from './SelectRow.svelte';
-  import { BITRATE_OPTIONS, bitrateValue, parseBitrate } from './options';
+  import StreamingRows from './StreamingRows.svelte';
 
   const settings = getApp().core.settings;
 </script>
 
 <Section title="Streaming" id="streaming">
-  <SelectRow
-    label="Bitrate cap"
-    hint="Lower caps make the server transcode; Original is bit-exact"
-    value={bitrateValue(settings.current.maxBitrate)}
-    options={BITRATE_OPTIONS}
-    onchange={(v) => void settings.setMaxBitrate(parseBitrate(v))}
-  />
+  <StreamingRows qualityHint="Lower caps make the server transcode; Original is bit-exact" />
   <SelectRow
     label="DSD playback"
     hint="DoP needs exclusive mode, DSP bypassed and a device that supports the carrier rate"

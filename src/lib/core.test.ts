@@ -20,6 +20,7 @@ function build(opts: { initError?: string | null; kv?: ReturnType<typeof memoryK
     setDsp: engine.setDsp,
     load: engine.load,
     setNext: engine.setNext,
+    prefetch: engine.prefetch,
     play: engine.play,
     pause: engine.pause,
     stop: engine.stop,

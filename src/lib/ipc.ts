@@ -14,7 +14,10 @@ export interface HttpHeader {
   value: string;
 }
 
-/** One track to play. `id` (Jellyfin item id) doubles as the stream-cache key. */
+/**
+ * One track to play. The engine downloads the whole file into its stream cache in
+ * the background (keyed by `id` + `url`), so playback survives network drops.
+ */
 export interface TrackRequest {
   id: string;
   /** Opaque queue-entry id chosen by the frontend; echoed on every event. */
@@ -109,7 +112,8 @@ export type EventKind =
   | 'trackStarted' // trackId became audible (also on gapless advance)
   | 'trackEnded' // trackId played to its end
   | 'signalPathChanged'
-  | 'error'; // message, for trackId/entryId when set
+  | 'error' // message, for trackId/entryId when set
+  | 'throughput'; // throughputBps measured while fetching trackId into the cache
 
 export interface EngineEvent {
   kind: EventKind;
@@ -120,6 +124,8 @@ export interface EngineEvent {
   durationMs: number;
   signalPath: SignalPath | null;
   message: string | null;
+  /** Network rate in bits/s; set on `throughput` events, else 0. */
+  throughputBps: number;
 }
 
 export interface DiscordButton {
@@ -189,6 +195,11 @@ export const ipc = {
     invoke<void>('engine_load', { track, startPlaying }),
   /** Track to continue with gaplessly when the current one ends. */
   setNext: (track: TrackRequest | null) => invoke<void>('engine_set_next', { track }),
+  /**
+   * Download these tracks fully into the stream cache in the background, in order,
+   * one at a time. Replaces the previous list; tracks no longer listed are dropped.
+   */
+  prefetch: (tracks: TrackRequest[]) => invoke<void>('engine_prefetch', { tracks }),
   play: () => invoke<void>('engine_play'),
   pause: () => invoke<void>('engine_pause'),
   stop: () => invoke<void>('engine_stop'),

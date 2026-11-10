@@ -184,4 +184,16 @@ describe('SettingsStore', () => {
     expect(saved.appearance.density).toBe('compact');
     expect(saved.behavior.startScreen).toBe('albums');
   });
+
+  it('parses streaming settings, clamps prefetch and persists updates', async () => {
+    expect(loadSettings(JSON.stringify({ maxBitrate: 128000 })).streaming).toEqual({
+      codec: 'aac', adaptive: false, prefetchTracks: 2,
+    });
+    const odd = loadSettings(JSON.stringify({ streaming: { codec: 'ogg', adaptive: true, prefetchTracks: 99.7 } }));
+    expect(odd.streaming).toEqual({ codec: 'aac', adaptive: true, prefetchTracks: 5 });
+    expect(parseSettings({ streaming: { prefetchTracks: -3 } }).streaming.prefetchTracks).toBe(0);
+    const { store, kv } = make();
+    await store.updateStreaming({ codec: 'mp3', prefetchTracks: 4 });
+    expect(loadSettings(kv.get(SETTINGS_KEY)).streaming).toEqual({ codec: 'mp3', adaptive: false, prefetchTracks: 4 });
+  });
 });
