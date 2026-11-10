@@ -1,6 +1,6 @@
-//! Rayla Tauri backend: thin command layer over `rayla_engine`, plus OS
-//! keychain secrets and offline downloads. Command names, argument names and
-//! JSON shapes are the contract in `src/lib/ipc.ts`.
+//! Rayla Tauri backend: thin command layer over `rayla_engine`, plus secrets
+//! (OS keychain; app-private file on Android) and offline downloads. Command
+//! names, argument names and JSON shapes are the contract in `src/lib/ipc.ts`.
 
 use rayla_engine::api::engine::{self as api, DiscordActivity, DspConfig, EngineEvent, OutputDevice, TrackRequest};
 use rayla_engine::downloads::{DownloadProgress, DownloadRecord, DownloadRequest, DownloadStore};
@@ -9,9 +9,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, Manager, State};
 
+mod secrets;
+use secrets::Secrets;
+
 const ENGINE_EVENT: &str = "engine://event";
 const DOWNLOAD_PROGRESS_EVENT: &str = "downloads://progress";
-const KEYRING_SERVICE: &str = "dev.rayla.player";
 
 struct AppState {
     engine_init_error: Option<String>,
@@ -86,29 +88,14 @@ fn discord_set_activity(
 
 // --------------------------------------------------------------- secrets
 
-fn entry(key: &str) -> Result<keyring::Entry, String> {
-    keyring::Entry::new(KEYRING_SERVICE, key).map_err(err)
+#[tauri::command]
+fn secret_get(secrets: State<'_, Secrets>, key: String) -> Result<Option<String>, String> {
+    secrets.get(&key)
 }
 
 #[tauri::command]
-fn secret_get(key: String) -> Result<Option<String>, String> {
-    match entry(&key)?.get_password() {
-        Ok(v) => Ok(Some(v)),
-        Err(keyring::Error::NoEntry) => Ok(None),
-        Err(e) => Err(err(e)),
-    }
-}
-
-#[tauri::command]
-fn secret_set(key: String, value: Option<String>) -> Result<(), String> {
-    let e = entry(&key)?;
-    match value.filter(|v| !v.is_empty()) {
-        Some(v) => e.set_password(&v).map_err(err),
-        None => match e.delete_credential() {
-            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-            Err(e) => Err(err(e)),
-        },
-    }
+fn secret_set(secrets: State<'_, Secrets>, key: String, value: Option<String>) -> Result<(), String> {
+    secrets.set(&key, value.filter(|v| !v.is_empty()))
 }
 
 // ------------------------------------------------------------- downloads
@@ -176,6 +163,7 @@ fn downloads_delete(state: State<'_, AppState>, id: String) -> Result<(), String
 
 // ------------------------------------------------------------------- app
 
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_http::init())
@@ -192,6 +180,8 @@ pub fn run() {
             api::set_event_handler(Box::new(move |event: EngineEvent| {
                 let _ = handle.emit(ENGINE_EVENT, event);
             }));
+
+            app.manage(Secrets::new(app.path().app_data_dir().ok()));
 
             let (downloads, downloads_error) = match app
                 .path()
