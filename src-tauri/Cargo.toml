@@ -2,6 +2,7 @@
 name = "rayla"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
 description = "Rayla: a minimal Jellyfin music player with an audiophile signal chain."
 
 [lib]
@@ -23,7 +24,15 @@ rayla_engine = { path = "../crates/engine" }
 
 # Android has no keyring backend; secrets live in the app-private data dir there.
 [target.'cfg(not(target_os = "android"))'.dependencies]
-keyring = { version = "3", features = ["apple-native", "windows-native", "linux-native"] }
+# Linux: the Secret Service (GNOME Keyring, KWallet) over pure-Rust zbus with the async-io
+# executor (no tokio runtime needed when blocking on it from a command).
+keyring = { version = "3", features = [
+    "apple-native",
+    "windows-native",
+    "async-secret-service",
+    "async-io",
+    "crypto-rust",
+] }
 
 # Desktop OS media controls: media keys, Windows SMTC, macOS Now Playing, Linux MPRIS.
 # `use_zbus` (pure Rust) instead of the default libdbus backend: no libdbus headers needed.

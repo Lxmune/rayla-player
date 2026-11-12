@@ -2,6 +2,7 @@
 name = "rayla_dsp"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
 description = "DSP chain for the Rayla player: gain, EQ, convolution, crossfeed, resampling, dither."
 
 [dependencies]

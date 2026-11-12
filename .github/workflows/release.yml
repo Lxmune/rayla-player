@@ -48,9 +48,18 @@ jobs:
           - os: macos-latest
             rust_targets: aarch64-apple-darwin,x86_64-apple-darwin
             args: --target universal-apple-darwin
+          # 22.04 keeps the AppImage compatible with older glibc versions.
+          - os: ubuntu-22.04
+            rust_targets: ''
+            args: ''
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+      - name: Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libasound2-dev
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.rust_targets }}
@@ -59,8 +68,8 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      # Builds the bundles (Windows: NSIS .exe + .msi; macOS: universal .dmg + .app.tar.gz)
-      # and uploads them to the draft release.
+      # Builds the bundles (Windows: NSIS .exe + .msi; macOS: universal .dmg + .app.tar.gz;
+      # Linux: .deb, .rpm, .AppImage) and uploads them to the draft release.
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -91,31 +100,15 @@ jobs:
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-37" "ndk;$NDK_VERSION"
           echo "NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
-      # Release signing. Without these secrets the APK would be unsigned (not installable),
-      # so the job fails instead of attaching a useless file.
-      - name: Signing key
-        env:
-          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: |
-          if [ -z "$KEYSTORE_BASE64" ]; then
-            echo "::error::ANDROID_KEYSTORE_BASE64 secret is not set"; exit 1
-          fi
-          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
-          {
-            echo "storeFile=$RUNNER_TEMP/release.jks"
-            echo "storePassword=$KEYSTORE_PASSWORD"
-            echo "keyAlias=$KEY_ALIAS"
-            echo "keyPassword=$KEY_PASSWORD"
-          } > src-tauri/gen/android/keystore.properties
       - run: npm ci
       - run: npx tauri android build --apk --target aarch64 armv7 x86_64
+      # The APK is unsigned: sign it with your own key (apksigner) before installing.
       - name: Upload APK
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          apk="Rayla_${GITHUB_REF_NAME#v}_android_universal.apk"
-          cp src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk "$apk"
+          src=$(ls src-tauri/gen/android/app/build/outputs/apk/universal/release/*.apk | head -n1)
+          if [ -z "$src" ]; then echo "::error::No APK was produced"; exit 1; fi
+          apk="Rayla_${GITHUB_REF_NAME#v}_android_universal_unsigned.apk"
+          cp "$src" "$apk"
           gh release upload "$GITHUB_REF_NAME" "$apk" --clobber

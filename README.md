@@ -8,8 +8,9 @@ Built with Tauri 2 (Rust) and Svelte 5.
 
 ## Features
 
-- **Bit-perfect output**: WASAPI exclusive (Windows), CoreAudio hog mode (macOS), AAudio
-  (Android), automatic sample-rate switching, and a signal-path view with a bit-perfect badge.
+- **Bit-perfect output**: WASAPI exclusive (Windows), CoreAudio hog mode (macOS), ALSA `hw:`
+  devices (Linux), AAudio (Android), automatic sample-rate switching, and a signal-path view
+  with a bit-perfect badge.
 - **DSP** (all bypassable): parametric EQ with AutoEQ import, FIR convolution, crossfeed,
   resampler + dither, ReplayGain (track/album) with preamp and clip guard.
 - **Playback**: true gapless, crossfade (never inside an album), DSD (DoP + PCM fallback),
@@ -25,13 +26,27 @@ Built with Tauri 2 (Rust) and Svelte 5.
 | --- | --- |
 | Windows (x64) | Release builds (NSIS installer + MSI) |
 | macOS (universal) | Release builds (.dmg), unsigned |
-| Android (API 26+) | Release builds (universal APK) |
-| Linux | Development only: no audio output backend yet |
+| Linux (x64) | Release builds (.deb, .rpm, .AppImage) |
+| Android (API 26+) | Release builds (universal APK), unsigned |
 | iOS | Planned |
 
 Download builds from the [Releases](../../releases) page.
 
 > macOS builds are not notarized. On first launch, right-click the app and choose **Open**.
+
+> The Android APK is **unsigned** and Android refuses to install it as is. Sign it with your
+> own key first, for example:
+> `apksigner sign --ks my.jks --out Rayla.apk Rayla_X.Y.Z_android_universal_unsigned.apk`
+
+### Linux notes
+
+- **Audio**: choose "System default" to play through PipeWire / PulseAudio (shared), or pick a
+  hardware device (`hw:`) and enable exclusive mode for bit-perfect output. Exclusive mode
+  needs the card to be free: other apps playing through it make the open fail, and Rayla
+  then falls back to shared mode.
+- **Secrets** (server tokens, API keys) are stored in the Secret Service (GNOME Keyring,
+  KWallet). Without one, they go to `secrets.json` in the app data directory, readable only
+  by your user.
 
 ## Setup notes
 
@@ -48,6 +63,12 @@ Requirements: Rust (stable), Node.js 24, and the
 npm ci
 npx tauri dev          # run in development
 npx tauri build        # build installers for the current OS
+```
+
+Linux (Debian / Ubuntu) also needs:
+
+```sh
+sudo apt install libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libasound2-dev
 ```
 
 Android: install the Android SDK, NDK 28 and JDK 21, then run
@@ -76,6 +97,8 @@ npm test
    to a **draft** release.
 3. Review the draft on the Releases tab and publish it.
 
-Android signing uses these repository secrets: `ANDROID_KEYSTORE_BASE64`
-(`base64 -w0 release.jks`), `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` and
-`ANDROID_KEY_PASSWORD`.
+No repository secrets are needed: macOS and Android builds are unsigned.
+
+## License
+
+[MIT](LICENSE)

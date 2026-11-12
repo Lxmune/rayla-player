@@ -3,6 +3,8 @@
 
 #[cfg(target_os = "android")]
 pub mod aaudio;
+#[cfg(target_os = "linux")]
+pub mod alsa;
 #[cfg(target_os = "macos")]
 pub mod coreaudio;
 pub mod sink;
@@ -55,14 +57,24 @@ pub fn default_backend() -> Arc<dyn Backend> {
     return Arc::new(coreaudio::CoreAudioBackend);
     #[cfg(target_os = "android")]
     return Arc::new(aaudio::AAudioBackend);
-    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "android")))]
+    #[cfg(target_os = "linux")]
+    return Arc::new(alsa::AlsaBackend);
+    #[cfg(not(any(
+        target_os = "windows",
+        target_os = "macos",
+        target_os = "android",
+        target_os = "linux"
+    )))]
     return Arc::new(sink::SinkBackend::default());
 }
 
 /// Narrow a left-justified sample to `bits` (rounding, clamped), still
 /// left-justified. Exact (identity) when the source has no bits below `bits`.
 #[inline]
-#[cfg_attr(not(any(test, target_os = "windows", target_os = "android")), allow(dead_code))]
+#[cfg_attr(
+    not(any(test, target_os = "windows", target_os = "android", target_os = "linux")),
+    allow(dead_code)
+)]
 pub fn quantize(s: i32, bits: u32) -> i32 {
     if bits >= 32 {
         return s;

@@ -14,7 +14,8 @@ jobs:
         with:
           node-version: 24
           cache: npm
-      # Engine + DSP only: the Tauri crate needs WebKitGTK to build on Linux.
+      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+      # Engine + DSP only; the desktop job builds the whole app.
       - run: cargo test -p rayla_dsp -p rayla_engine
       - run: npm ci
       - run: npm run check
@@ -30,9 +31,16 @@ jobs:
             bundles: target/release/bundle
           - os: macos-latest
             bundles: target/release/bundle
+          - os: ubuntu-22.04
+            bundles: target/release/bundle
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+      - name: Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libasound2-dev
       - uses: dtolnay/rust-toolchain@stable
       - uses: actions/setup-node@v4
         with:
