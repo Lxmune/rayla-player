@@ -1,0 +1,121 @@
+name: release
+
+# Push a tag `vX.Y.Z` (matching the version in package.json, src-tauri/tauri.conf.json and
+# src-tauri/Cargo.toml) to build every platform and attach the installers to a *draft*
+# GitHub release. Review the draft on the Releases tab, then publish it.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    outputs:
+      release_id: ${{ steps.release.outputs.id }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tag matches the app version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          for v in "$(jq -r .version package.json)" \
+                   "$(jq -r .version src-tauri/tauri.conf.json)" \
+                   "$(grep -m1 '^version' src-tauri/Cargo.toml | cut -d'"' -f2)"; do
+            if [ "$v" != "$tag" ]; then
+              echo "::error::Tag $GITHUB_REF_NAME does not match version $v"; exit 1
+            fi
+          done
+      - id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --draft --generate-notes --title "Rayla $GITHUB_REF_NAME"
+          id=$(gh api "repos/$GITHUB_REPOSITORY/releases" \
+                 --jq ".[] | select(.tag_name == \"$GITHUB_REF_NAME\") | .id" | head -n1)
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+
+  desktop:
+    needs: create-release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            rust_targets: ''
+            args: ''
+          - os: macos-latest
+            rust_targets: aarch64-apple-darwin,x86_64-apple-darwin
+            args: --target universal-apple-darwin
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_targets }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      # Builds the bundles (Windows: NSIS .exe + .msi; macOS: universal .dmg + .app.tar.gz)
+      # and uploads them to the draft release.
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          releaseId: ${{ needs.create-release.outputs.release_id }}
+          args: ${{ matrix.args }}
+
+  android:
+    needs: create-release
+    runs-on: ubuntu-latest
+    env:
+      NDK_VERSION: 28.2.13676358
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Android SDK packages
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-37" "ndk;$NDK_VERSION"
+          echo "NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
+      # Release signing. Without these secrets the APK would be unsigned (not installable),
+      # so the job fails instead of attaching a useless file.
+      - name: Signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::error::ANDROID_KEYSTORE_BASE64 secret is not set"; exit 1
+          fi
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          {
+            echo "storeFile=$RUNNER_TEMP/release.jks"
+            echo "storePassword=$KEYSTORE_PASSWORD"
+            echo "keyAlias=$KEY_ALIAS"
+            echo "keyPassword=$KEY_PASSWORD"
+          } > src-tauri/gen/android/keystore.properties
+      - run: npm ci
+      - run: npx tauri android build --apk --target aarch64 armv7 x86_64
+      - name: Upload APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          apk="Rayla_${GITHUB_REF_NAME#v}_android_universal.apk"
+          cp src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk "$apk"
+          gh release upload "$GITHUB_REF_NAME" "$apk" --clobber

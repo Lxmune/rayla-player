@@ -1,6 +1,7 @@
 name: build
 on:
   push:
+    branches: ['**'] # tags are built by release.yml
   pull_request:
 
 jobs:
