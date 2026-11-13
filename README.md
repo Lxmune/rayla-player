@@ -24,7 +24,7 @@ Built with Tauri 2 (Rust) and Svelte 5.
 
 | Platform | Status |
 | --- | --- |
-| Windows (x64) | Release builds (NSIS installer + MSI) |
+| Windows (x64) | Release builds (NSIS installer, MSI, portable .exe) |
 | macOS (universal) | Release builds (.dmg), unsigned |
 | Linux (x64) | Release builds (.deb, .rpm, .AppImage) |
 | Android (API 26+) | Release builds (universal APK), unsigned |

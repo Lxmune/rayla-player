@@ -76,6 +76,17 @@ jobs:
         with:
           releaseId: ${{ needs.create-release.outputs.release_id }}
           args: ${{ matrix.args }}
+      # Portable Windows build: the bare exe, runs without installing (needs the
+      # WebView2 runtime, which ships with Windows 10 and 11).
+      - name: Upload portable exe
+        if: runner.os == 'Windows'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          exe="Rayla_${GITHUB_REF_NAME#v}_x64_portable.exe"
+          cp target/release/rayla.exe "$exe"
+          gh release upload "$GITHUB_REF_NAME" "$exe" --clobber
 
   android:
     needs: create-release
