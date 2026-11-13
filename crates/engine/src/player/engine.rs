@@ -864,6 +864,19 @@ impl Core {
             return;
         }
 
+        // After an underrun, wait (device stopped) until a cushion is decoded
+        // again: a slow source then gives one clean gap instead of a stutter
+        // of tiny ones, and the device never replays stale buffers.
+        if self.state == PlaybackState::Buffering && cur.off >= cur.buf.len() && !cur.eof {
+            if !cur.pipe.wait_refilled(POLL) {
+                self.set_running(false);
+                return;
+            }
+            if cur.started && !self.cur_is_dop() {
+                self.fade_in = Some(0);
+            }
+        }
+
         // 2. Make sure a device is open for this track's format.
         if self.out.is_none() {
             let fmt = cur.fmt.unwrap();

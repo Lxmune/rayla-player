@@ -5,7 +5,10 @@
     DISCORD_LINK_PLACEHOLDERS,
     DISCORD_PLACEHOLDERS,
     type DiscordSettings,
+    type DiscordStatusDisplay,
+    type DiscordTimeDisplay,
   } from '../../lib/settings/types';
+  import SegmentRow from './SegmentRow.svelte';
   import Section from './Section.svelte';
   import TextRow from './TextRow.svelte';
   import ToggleRow from './ToggleRow.svelte';
@@ -46,10 +49,31 @@
   </p>
   <TextRow label="Details (first line)" value={d.details} oncommit={(v) => patch({ details: v })} />
   <TextRow label="State (second line)" value={d.state} oncommit={(v) => patch({ state: v })} />
+  <SegmentRow
+    label="Status under your name"
+    hint={'What follows "Listening to" in the member list and DMs'}
+    value={d.statusDisplay}
+    options={[
+      { value: 'details', label: 'First line' },
+      { value: 'state', label: 'Second line' },
+      { value: 'name', label: 'App name' },
+    ]}
+    onchange={(v) => patch({ statusDisplay: v as DiscordStatusDisplay })}
+  />
   <TextRow label="Large image text" value={d.largeText} oncommit={(v) => patch({ largeText: v })} />
   <TextRow label="Small image text" value={d.smallText} oncommit={(v) => patch({ smallText: v })} />
 
-  <ToggleRow label="Show elapsed time" checked={d.showElapsed} onchange={(v) => patch({ showElapsed: v })} />
+  <SegmentRow
+    label="Playback time"
+    hint="Hidden while paused"
+    value={d.time}
+    options={[
+      { value: 'bar', label: 'Progress bar' },
+      { value: 'elapsed', label: 'Elapsed' },
+      { value: 'off', label: 'Off' },
+    ]}
+    onchange={(v) => patch({ time: v as DiscordTimeDisplay })}
+  />
   <ToggleRow
     label="Show when paused"
     checked={d.showWhenPaused}

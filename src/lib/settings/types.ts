@@ -17,6 +17,14 @@ export const DISCORD_PLACEHOLDERS = [
 /** Additionally usable in button label/URL templates. */
 export const DISCORD_LINK_PLACEHOLDERS = ['id', 'albumId', 'publicUrl'] as const;
 
+/** Which line Discord shows after "Listening to" under the user's name. */
+export const DISCORD_STATUS_DISPLAYS = ['name', 'details', 'state'] as const;
+export type DiscordStatusDisplay = (typeof DISCORD_STATUS_DISPLAYS)[number];
+
+/** Playback time on Discord: a progress bar (start + end), elapsed time only, or nothing. */
+export const DISCORD_TIME_DISPLAYS = ['bar', 'elapsed', 'off'] as const;
+export type DiscordTimeDisplay = (typeof DISCORD_TIME_DISPLAYS)[number];
+
 export interface DiscordButtonTemplate {
   label: string;
   url: string;
@@ -27,9 +35,12 @@ export interface DiscordSettings {
   applicationId: string;
   details: string;
   state: string;
+  /** 'name' = the Discord application's name, else the rendered details/state line. */
+  statusDisplay: DiscordStatusDisplay;
   largeText: string;
   smallText: string;
-  showElapsed: boolean;
+  /** Hidden while paused (Discord can't stop a running clock). */
+  time: DiscordTimeDisplay;
   showWhenPaused: boolean;
   /** Needs publicUrl: Discord fetches the image itself. */
   showCover: boolean;
@@ -182,9 +193,10 @@ export const DEFAULT_DISCORD: DiscordSettings = {
   applicationId: PLACEHOLDER_DISCORD_APP_ID,
   details: '{title}',
   state: '{artist} - {album}',
+  statusDisplay: 'details',
   largeText: '{album}',
   smallText: '{format}',
-  showElapsed: true,
+  time: 'bar',
   showWhenPaused: true,
   showCover: false,
   publicUrl: '',

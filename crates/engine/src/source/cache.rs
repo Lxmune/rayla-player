@@ -222,6 +222,16 @@ pub(crate) fn cache_key(id: &str, url: &str) -> String {
     format!("{id}-{:016x}", fnv1a64(url))
 }
 
+/// True while some held entry is still downloading. Prefetch waits for this
+/// to clear so it never takes bandwidth from the playing (or armed) track.
+pub(crate) fn downloading() -> bool {
+    let reg = registry().lock().unwrap();
+    reg.values().filter_map(Weak::upgrade).any(|e| {
+        let st = e.st.lock().unwrap();
+        st.holders > 0 && st.running && !st.complete && !st.fatal
+    })
+}
+
 /// Attach to (creating if needed) the entry for `key`. Starts the downloader
 /// when the file is incomplete and it is not already running.
 pub(crate) fn attach(

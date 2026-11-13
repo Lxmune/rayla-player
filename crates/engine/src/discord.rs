@@ -72,6 +72,9 @@ pub(crate) fn render_activity(a: &DiscordActivity) -> String {
     if let Some(s) = clean_text(&a.state) {
         f.push(format!("\"state\":{}", json_str(&s)));
     }
+    if let Some(t) = a.status_display_type.filter(|t| *t <= 2) {
+        f.push(format!("\"status_display_type\":{t}"));
+    }
     let mut ts = Vec::new();
     if let Some(s) = a.start_timestamp_ms.filter(|v| *v > 0) {
         ts.push(format!("\"start\":{s}"));
@@ -407,6 +410,10 @@ fn send_activity(l: &mut Live, activity: Option<&str>) -> io::Result<()> {
     Ok(())
 }
 
+fn has_timestamps(activity: Option<&str>) -> bool {
+    activity.is_some_and(|a| a.contains("\"timestamps\":"))
+}
+
 fn close(l: Live) {
     let mut c = l.conn;
     let _ = write_frame(&mut *c, OP_CLOSE, "{}");
@@ -473,7 +480,19 @@ fn run(shared: Arc<Shared>, transport: Box<dyn Transport>, cfg: Config) {
         }
         let l = live.as_mut().unwrap();
         last_send = Some(Instant::now());
-        match send_activity(l, want.activity.as_deref()) {
+        // Discord keeps the old timestamps (and keeps counting) when an update just
+        // leaves them out, e.g. on pause: clear the activity before sending it.
+        let drops_clock = has_timestamps(sent.as_ref().and_then(|d| d.activity.as_deref()))
+            && want
+                .activity
+                .as_deref()
+                .is_some_and(|a| !has_timestamps(Some(a)));
+        let res = if drops_clock {
+            send_activity(l, None)
+        } else {
+            Ok(())
+        };
+        match res.and_then(|()| send_activity(l, want.activity.as_deref())) {
             Ok(()) => sent = Some(want),
             Err(_) => {
                 // Pipe broke (Discord restarted): reconnect and resend.
@@ -702,6 +721,7 @@ mod tests {
             start_timestamp_ms: None,
             end_timestamp_ms: None,
             buttons: vec![],
+            status_display_type: None,
         }
     }
 
@@ -714,6 +734,7 @@ mod tests {
         a.large_image = Some("https://x/y.jpg".into());
         a.large_text = Some("Album".into());
         a.small_image = Some("".into());
+        a.status_display_type = Some(2);
         a.start_timestamp_ms = Some(1_700_000_000_000);
         a.end_timestamp_ms = Some(1_700_000_200_000);
         a.buttons = (0..3)
@@ -736,6 +757,7 @@ mod tests {
         assert!(body.contains("\"type\":2"));
         assert!(body.contains("\"details\":\"Song Title\""));
         assert!(body.contains("\"state\":\"Artist\""));
+        assert!(body.contains("\"status_display_type\":2"));
         assert!(body.contains("\"timestamps\":{\"start\":1700000000000,\"end\":1700000200000}"));
         assert!(body.contains("\"large_image\":\"https://x/y.jpg\""));
         assert!(body.contains("\"large_text\":\"Album\""));
@@ -751,6 +773,10 @@ mod tests {
         a.state = "y".repeat(300);
         let j = render_activity(&a);
         assert!(!j.contains("timestamps") && !j.contains("assets") && !j.contains("buttons"));
+        assert!(!j.contains("status_display_type"));
+        let mut b = act("x");
+        b.status_display_type = Some(7);
+        assert!(!render_activity(&b).contains("status_display_type"));
         assert!(j.contains("\"details\":\"x\u{2800}\""));
         assert!(j.contains(&format!("\"state\":\"{}\u{2026}\"", "y".repeat(127))));
         let j = render_activity(&act("  "));
@@ -769,6 +795,29 @@ mod tests {
         let (_, op, body) = recv(&f);
         assert_eq!(op, 1);
         assert!(body.contains("\"activity\":null"), "{body}");
+    }
+
+    #[test]
+    fn dropping_timestamps_clears_first() {
+        let mut f = fake();
+        let w = worker(&mut f, 10);
+        let mut playing = act("Song");
+        playing.start_timestamp_ms = Some(1_700_000_000_000);
+        w.set("1".into(), Some(render_activity(&playing)));
+        recv(&f);
+        recv(&f);
+        w.set("1".into(), Some(render_activity(&act("Paused"))));
+        let (_, _, body) = recv(&f);
+        assert!(body.contains("\"activity\":null"), "{body}");
+        let (_, _, body) = recv(&f);
+        assert!(
+            body.contains("\"details\":\"Paused\"") && !body.contains("timestamps"),
+            "{body}"
+        );
+        // Untimed to untimed: no extra clear.
+        w.set("1".into(), Some(render_activity(&act("Still"))));
+        let (_, _, body) = recv(&f);
+        assert!(body.contains("\"details\":\"Still\""), "{body}");
     }
 
     #[test]

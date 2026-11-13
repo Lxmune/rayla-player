@@ -1,7 +1,10 @@
 import type { DiscordActivity, PlaybackState, SignalPath } from '../ipc';
-import type { DiscordSettings } from '../settings/types';
+import type { DiscordSettings, DiscordStatusDisplay } from '../settings/types';
 import type { TrackMeta } from '../track-meta';
 import { coverUrl, discordVars, hasRealApplicationId, renderPresence } from './discord-template';
+
+/** Discord's `status_display_type` values. */
+const STATUS_DISPLAY_TYPE: Record<DiscordStatusDisplay, 0 | 1 | 2> = { name: 0, state: 1, details: 2 };
 
 /** Matches `ipc.discordSetActivity`. */
 export type SetActivity = (applicationId: string, activity: DiscordActivity | null) => Promise<void>;
@@ -95,6 +98,9 @@ export class DiscordPresence {
       }),
     );
     const cover = s.showCover ? coverUrl(meta, s.publicUrl) : null;
+    // Discord runs the clock itself, so a paused track shows no time at all.
+    const start = s.time !== 'off' && !paused ? now - o.positionMs : null;
+    const end = start !== null && s.time === 'bar' && o.durationMs > 0 ? start + o.durationMs : null;
     this.activeAppId = appId;
     await this.setActivity(appId, {
       details: r.details,
@@ -103,9 +109,10 @@ export class DiscordPresence {
       largeText: r.largeText || null,
       smallImage: paused ? 'pause' : 'play',
       smallText: r.smallText || null,
-      startTimestampMs: s.showElapsed && !paused ? now - o.positionMs : null,
-      endTimestampMs: null,
+      startTimestampMs: start,
+      endTimestampMs: end,
       buttons: r.buttons,
+      statusDisplayType: STATUS_DISPLAY_TYPE[s.statusDisplay],
     }).catch(() => {});
   }
 }

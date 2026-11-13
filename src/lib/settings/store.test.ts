@@ -114,6 +114,8 @@ describe('SettingsStore', () => {
   });
 
   it('a short saved button list is padded to two slots', () => {
+    expect(parseSettings({ discord: { showElapsed: false } }).discord.time).toBe('off');
+    expect(parseSettings({ discord: { showElapsed: true } }).discord.time).toBe('bar');
     const s = parseSettings({ discord: { buttons: [{ label: 'Go', url: 'u' }] } });
     expect(s.discord.buttons).toEqual([{ label: 'Go', url: 'u' }, { label: '', url: '' }]);
   });

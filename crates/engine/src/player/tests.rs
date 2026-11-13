@@ -408,6 +408,8 @@ pub(crate) enum Behavior {
     DropFirstAfter(usize),
     /// Ignores Range; answers 200 with a chunked body and no Content-Length.
     Chunked,
+    /// Sends the body in pieces of this many bytes, 20 ms apart.
+    Trickle(usize),
 }
 
 pub(crate) struct TestServer {
@@ -543,6 +545,14 @@ fn serve(
         let cut = (start + n).min(end);
         sock.write_all(&body[start..cut])?;
         return Ok(()); // closes the socket mid-body
+    }
+    if let Behavior::Trickle(n) = behavior {
+        for c in body[start..end].chunks(n) {
+            sock.write_all(c)?;
+            sock.flush()?;
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        return Ok(());
     }
     sock.write_all(&body[start..end])
 }
@@ -856,6 +866,40 @@ fn engine_plays_http_track_then_replays_offline_from_cache() {
         left_justified(&pcm, 16),
         "offline replay differs"
     );
+}
+
+#[test]
+fn slow_source_rebuffers_in_one_piece_instead_of_stuttering() {
+    // 3 s of audio arriving in 8 KB pieces (~23 ms of audio each) to a device
+    // that eats it instantly: every piece would be its own underrun if the
+    // engine resumed on the first sample.
+    let pcm = noise(2 * 44100 * 3, 16, 9);
+    let srv = TestServer::start_with(wav_bytes(44100, 2, 16, &pcm), Behavior::Trickle(8 * 1024));
+    let r = rig("http-trickle", 0.0);
+    let req = TrackRequest {
+        id: "slow".into(),
+        entry_id: "e-slow".into(),
+        url: srv.url(),
+        headers: vec![HttpHeader {
+            name: "X-Token".into(),
+            value: "secret".into(),
+        }],
+        local_path: None,
+        album_id: None,
+        fallback_gain_db: None,
+    };
+    r.engine.send(Cmd::SetOutput(None, true)).unwrap();
+    r.engine.send(Cmd::Load(req, true)).unwrap();
+    let ev = r.until_stopped();
+    let underruns = ev
+        .windows(2)
+        .filter(|w| w[0].state == PlaybackState::Playing && w[1].state == PlaybackState::Buffering)
+        .count();
+    assert!(
+        underruns <= 4,
+        "{underruns} underruns: playback resumed before refilling"
+    );
+    assert_eq!(r.samples().len(), pcm.len(), "audio lost while rebuffering");
 }
 
 // ---- DSP integration ------------------------------------------------------------

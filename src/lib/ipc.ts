@@ -160,6 +160,9 @@ export interface DiscordActivity {
   endTimestampMs: number | null;
   /** At most two are sent. */
   buttons: DiscordButton[];
+  /** Text after "Listening to" in Discord's member list: 0 = app name, 1 = state,
+   *  2 = details. null = Discord's default (app name). */
+  statusDisplayType: 0 | 1 | 2 | null;
 }
 
 // ------------------------------------------------------------ downloads types

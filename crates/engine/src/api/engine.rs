@@ -337,6 +337,10 @@ pub struct DiscordActivity {
     pub end_timestamp_ms: Option<i64>,
     /// At most two are sent.
     pub buttons: Vec<DiscordButton>,
+    /// Which text Discord shows after "Listening to" in the member list:
+    /// 0 = application name, 1 = state, 2 = details. `None` leaves Discord's default (name).
+    #[serde(default)]
+    pub status_display_type: Option<u8>,
 }
 
 /// Show `activity` on Discord under `application_id`, or clear it with `None`.

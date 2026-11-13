@@ -29,6 +29,8 @@ ndk-sys = { version = "0.6", features = ["audio"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 wasapi = "0.19"
+# MMCSS "Pro Audio" scheduling for the thread that feeds the device.
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Threading"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 coreaudio-rs = "0.12"

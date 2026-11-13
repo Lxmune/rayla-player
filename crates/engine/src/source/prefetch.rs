@@ -1,7 +1,8 @@
 //! Background prefetch: downloads a list of tracks completely into the
 //! stream cache, one at a time, in order. Each `set` replaces the list; a
 //! download in flight for a track that was dropped is aborted (unless a
-//! player source still uses the same cache entry).
+//! player source still uses the same cache entry). A prefetch only starts
+//! while no other download is running, so it never slows playback.
 
 use super::cache::{self, Status};
 use crate::api::engine::TrackRequest;
@@ -53,6 +54,13 @@ fn worker(shared: Arc<(Mutex<List>, Condvar)>, cache_dir: PathBuf) {
         };
         let replaced = || m.lock().unwrap().generation != generation;
         'tracks: for t in tracks {
+            // Playback downloads (current, armed next, an earlier prefetch) go first.
+            while cache::downloading() {
+                if replaced() {
+                    break 'tracks;
+                }
+                std::thread::sleep(Duration::from_millis(500));
+            }
             let headers: Vec<(String, String)> = t
                 .headers
                 .iter()

@@ -42,8 +42,10 @@ pub struct Pipeline {
     cancel: Arc<AtomicBool>,
 }
 
-/// Seconds of audio decoded ahead.
-const AHEAD_SECS: usize = 2;
+/// Seconds of audio decoded ahead: rides out slow disk or network stretches.
+const AHEAD_SECS: usize = 10;
+/// Seconds that must be queued again before playback resumes after an underrun.
+const RESUME_SECS: usize = 1;
 
 impl Pipeline {
     pub fn spawn(req: Arc<TrackRequest>, cache_dir: PathBuf, plan: DsdPlan) -> Pipeline {
@@ -83,6 +85,22 @@ impl Pipeline {
             space.notify_one();
         }
         msg
+    }
+
+    /// Wait up to `timeout` until the queue holds `RESUME_SECS` of audio (or
+    /// the track's end / a failure is queued). True when playback can resume.
+    pub fn wait_refilled(&self, timeout: Duration) -> bool {
+        let (m, _) = &*self.shared;
+        let ready = |g: &Shared| g.eof || g.q_frames >= g.limit / AHEAD_SECS * RESUME_SECS;
+        let g = m.lock().unwrap();
+        if ready(&g) {
+            return true;
+        }
+        let (g, _) = self
+            .ready
+            .wait_timeout_while(g, timeout, |g| !ready(g))
+            .unwrap();
+        ready(&g)
     }
 
     /// Discard buffered audio and continue decoding from `ms`.

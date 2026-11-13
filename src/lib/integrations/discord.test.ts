@@ -148,8 +148,24 @@ describe('DiscordPresence', () => {
       smallImage: 'play',
       largeImage: 'rayla',
       startTimestampMs: 1_700_000_000_000 - 10_000,
-      endTimestampMs: null,
+      endTimestampMs: 1_700_000_000_000 - 10_000 + 300_000,
+      statusDisplayType: 2,
     });
+  });
+
+  it('elapsed mode sends only a start; unknown duration falls back to elapsed', async () => {
+    await p.observe({ ...on, time: 'elapsed' }, obs('playing', 0));
+    await p.observe(on, obs('playing', 0, { durationMs: 0 }));
+    expect(sets.map(([, a]) => [a?.startTimestampMs, a?.endTimestampMs])).toEqual([
+      [1_700_000_000_000, null],
+      [1_700_000_000_000, null],
+    ]);
+  });
+
+  it('maps the status line setting to status_display_type', async () => {
+    await p.observe({ ...on, statusDisplay: 'state' }, obs('playing', 0));
+    await p.observe({ ...on, statusDisplay: 'name' }, obs('playing', 0));
+    expect(sets.map(([, a]) => a?.statusDisplayType)).toEqual([1, 0]);
   });
 
   it('position ticks do not push; seeks and pause do', async () => {
@@ -200,7 +216,7 @@ describe('DiscordPresence', () => {
       ...on,
       showCover: true,
       publicUrl: 'https://jf.example',
-      showElapsed: false,
+      time: 'off',
       buttons: [
         { label: 'Open', url: '{publicUrl}/web/#/details?id={id}' },
         { label: '', url: '' },
@@ -210,6 +226,7 @@ describe('DiscordPresence', () => {
     const a = sets[0]![1]!;
     expect(a.largeImage).toBe('https://jf.example/Items/t1/Images/Primary');
     expect(a.startTimestampMs).toBeNull();
+    expect(a.endTimestampMs).toBeNull();
     expect(a.buttons).toEqual([{ label: 'Open', url: 'https://jf.example/web/#/details?id=t1' }]);
   });
 

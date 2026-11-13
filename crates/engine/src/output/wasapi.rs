@@ -91,6 +91,7 @@ impl Backend for WasapiBackend {
         exclusive: bool,
         want: Format,
     ) -> Result<Box<dyn Output>> {
+        pro_audio_priority();
         let dev = find_device(device_id)?;
         let name = dev.get_friendlyname().unwrap_or_default();
         if exclusive {
@@ -101,6 +102,24 @@ impl Backend for WasapiBackend {
         }
         Ok(Box::new(open_shared(&dev, &name, want)?))
     }
+}
+
+/// Register the calling thread (the engine thread, which also writes to the
+/// device) with MMCSS "Pro Audio", once. Without it a busy system (UI,
+/// downloads, scanners) can delay the thread past the few-millisecond
+/// device buffer. Failure leaves normal scheduling.
+fn pro_audio_priority() {
+    use std::cell::Cell;
+    use windows_sys::Win32::System::Threading::AvSetMmThreadCharacteristicsW;
+    thread_local!(static DONE: Cell<bool> = const { Cell::new(false) });
+    if DONE.replace(true) {
+        return;
+    }
+    let task: Vec<u16> = "Pro Audio\0".encode_utf16().collect();
+    let mut index = 0u32;
+    // SAFETY: `task` is a NUL-terminated UTF-16 string that outlives the call;
+    // the handle is kept for the thread's lifetime (never reverted).
+    unsafe { AvSetMmThreadCharacteristicsW(task.as_ptr(), &mut index) };
 }
 
 fn open_exclusive(dev: &Device, name: &str, want: Format) -> Result<WasapiOutput> {

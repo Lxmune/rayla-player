@@ -76,11 +76,23 @@ pub fn init(cache_dir: String) -> Result<()> {
     source::prune_cache(&dir);
     PREFETCH.get_or_init(|| Prefetcher::new(dir.clone()));
     ENGINE.get_or_init(|| {
-        let emit: engine::EmitFn = Arc::new(|e| {
-            let handler = SINK.lock().unwrap().clone();
-            if let Some(h) = handler {
-                h(e);
-            }
+        // Events are handed to their own thread: the engine thread feeds the
+        // device and must never wait on the UI side (webview, event loop).
+        let (tx, rx) = std::sync::mpsc::channel::<EngineEvent>();
+        std::thread::Builder::new()
+            .name("rayla-events".into())
+            .spawn(move || {
+                for e in rx {
+                    let handler = SINK.lock().unwrap().clone();
+                    if let Some(h) = handler {
+                        h(e);
+                    }
+                }
+            })
+            .expect("spawn event thread");
+        let tx = Mutex::new(tx);
+        let emit: engine::EmitFn = Arc::new(move |e| {
+            let _ = tx.lock().unwrap().send(e);
         });
         Engine::start(dir, backend(), emit)
     });
