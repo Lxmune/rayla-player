@@ -31,9 +31,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" --draft --generate-notes --title "Rayla $GITHUB_REF_NAME"
-          id=$(gh api "repos/$GITHUB_REPOSITORY/releases" \
-                 --jq ".[] | select(.tag_name == \"$GITHUB_REF_NAME\") | .id" | head -n1)
+          # Drafts left by an earlier run of this tag would split the uploads:
+          # tauri-action uses the id below, `gh release upload` picks by tag.
+          for old in $(gh api "repos/$GITHUB_REPOSITORY/releases" \
+                 --jq ".[] | select(.draft and .tag_name == \"$GITHUB_REF_NAME\") | .id"); do
+            gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/$old"
+          done
+          id=$(gh api -X POST "repos/$GITHUB_REPOSITORY/releases" \
+                 -f tag_name="$GITHUB_REF_NAME" -f name="Rayla $GITHUB_REF_NAME" \
+                 -F draft=true -F generate_release_notes=true --jq .id)
           echo "id=$id" >> "$GITHUB_OUTPUT"
 
   desktop:
