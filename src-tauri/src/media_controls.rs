@@ -38,7 +38,9 @@ pub enum MediaAction {
     Previous,
     Stop,
     #[serde(rename_all = "camelCase")]
-    Seek { position_ms: u64 },
+    Seek {
+        position_ms: u64,
+    },
 }
 
 #[cfg_attr(any(target_os = "android", target_os = "ios"), allow(dead_code))]
@@ -49,8 +51,8 @@ pub const MEDIA_ACTION_EVENT: &str = "media://action";
 mod desktop {
     use super::{MediaAction, NowPlayingInfo};
     use souvlaki::{
-        MediaControlEvent, MediaControls, MediaMetadata, MediaPlayback, MediaPosition, PlatformConfig,
-        SeekDirection,
+        MediaControlEvent, MediaControls, MediaMetadata, MediaPlayback, MediaPosition,
+        PlatformConfig, SeekDirection,
     };
     use std::ffi::c_void;
     use std::sync::{Arc, Mutex};
@@ -70,7 +72,12 @@ mod desktop {
 
     impl Shared {
         pub fn new() -> Self {
-            Shared { playing: false, position_ms: 0, duration_ms: 0, at: Instant::now() }
+            Shared {
+                playing: false,
+                position_ms: 0,
+                duration_ms: 0,
+                at: Instant::now(),
+            }
         }
 
         /// Position extrapolated from the last update while playing.
@@ -86,7 +93,11 @@ mod desktop {
         }
 
         fn seek_to(&self, ms: u64) -> MediaAction {
-            let ms = if self.duration_ms > 0 { ms.min(self.duration_ms) } else { ms };
+            let ms = if self.duration_ms > 0 {
+                ms.min(self.duration_ms)
+            } else {
+                ms
+            };
             MediaAction::Seek { position_ms: ms }
         }
     }
@@ -96,13 +107,17 @@ mod desktop {
         match ev {
             MediaControlEvent::Play => Some(MediaAction::Play),
             MediaControlEvent::Pause => Some(MediaAction::Pause),
-            MediaControlEvent::Toggle => {
-                Some(if st.playing { MediaAction::Pause } else { MediaAction::Play })
-            }
+            MediaControlEvent::Toggle => Some(if st.playing {
+                MediaAction::Pause
+            } else {
+                MediaAction::Play
+            }),
             MediaControlEvent::Next => Some(MediaAction::Next),
             MediaControlEvent::Previous => Some(MediaAction::Previous),
             MediaControlEvent::Stop => Some(MediaAction::Stop),
-            MediaControlEvent::SetPosition(MediaPosition(d)) => Some(st.seek_to(d.as_millis() as u64)),
+            MediaControlEvent::SetPosition(MediaPosition(d)) => {
+                Some(st.seek_to(d.as_millis() as u64))
+            }
             MediaControlEvent::Seek(dir) => Some(relative_seek(st, dir, DEFAULT_SEEK_STEP_MS)),
             MediaControlEvent::SeekBy(dir, d) => Some(relative_seek(st, dir, d.as_millis() as u64)),
             MediaControlEvent::SetVolume(_)
@@ -127,7 +142,10 @@ mod desktop {
 
     impl Session {
         /// `hwnd` is the main window handle on Windows, `None` elsewhere.
-        pub fn new(hwnd: Option<*mut c_void>, emit: impl Fn(MediaAction) + Send + 'static) -> Result<Self, String> {
+        pub fn new(
+            hwnd: Option<*mut c_void>,
+            emit: impl Fn(MediaAction) + Send + 'static,
+        ) -> Result<Self, String> {
             let mut controls = MediaControls::new(PlatformConfig {
                 dbus_name: "rayla",
                 display_name: "Rayla",
@@ -183,7 +201,9 @@ mod desktop {
             if let Ok(mut g) = self.state.lock() {
                 *g = Shared::new();
             }
-            self.controls.set_playback(MediaPlayback::Stopped).map_err(|e| format!("{e:?}"))?;
+            self.controls
+                .set_playback(MediaPlayback::Stopped)
+                .map_err(|e| format!("{e:?}"))?;
             self.controls
                 .set_metadata(MediaMetadata::default())
                 .map_err(|e| format!("{e:?}"))

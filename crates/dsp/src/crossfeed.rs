@@ -102,7 +102,11 @@ mod tests {
     #[test]
     fn centred_signal_keeps_level_at_low_frequencies() {
         let x = sine(100.0, RATE, 2, 48_000, 0.5);
-        for level in [CrossfeedLevel::Low, CrossfeedLevel::Medium, CrossfeedLevel::High] {
+        for level in [
+            CrossfeedLevel::Low,
+            CrossfeedLevel::Medium,
+            CrossfeedLevel::High,
+        ] {
             let y = run(level, &x);
             let db = 20.0 * (rms(&y[48_000..]) / rms(&x[48_000..])).log10();
             assert!(db.abs() < 0.3, "{level:?}: {db} dB");
@@ -120,10 +124,14 @@ mod tests {
         assert!((db + 4.5).abs() < 0.7, "leak {db} dB");
         // Stronger level leaks more.
         let y = run(CrossfeedLevel::High, &x);
-        let db_high = 20.0 * (rms(&channel(&y, 2, 1)[24_000..]) / rms(&channel(&y, 2, 0)[24_000..])).log10();
+        let db_high =
+            20.0 * (rms(&channel(&y, 2, 1)[24_000..]) / rms(&channel(&y, 2, 0)[24_000..])).log10();
         assert!(db_high > db + 1.0, "{db_high} vs {db}");
         // High frequencies leak far less.
-        let hf: Vec<f64> = sine(8000.0, RATE, 1, 48_000, 0.5).iter().flat_map(|s| [*s, 0.0]).collect();
+        let hf: Vec<f64> = sine(8000.0, RATE, 1, 48_000, 0.5)
+            .iter()
+            .flat_map(|s| [*s, 0.0])
+            .collect();
         let y = run(CrossfeedLevel::Medium, &hf);
         assert!(rms(&channel(&y, 2, 1)[24_000..]) < 0.1 * rms(&channel(&y, 2, 0)[24_000..]));
     }

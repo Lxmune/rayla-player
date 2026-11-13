@@ -1,7 +1,13 @@
 //! Synthetic DSD files for tests. Channel data is given MSB-first (oldest
 //! sample in the top bit); `build_dsf` bit-reverses when asked for LSB-first.
 
-pub fn build_dsf(rate: u32, chans: &[Vec<u8>], lsb_first: bool, block: usize, id3: Option<Vec<u8>>) -> Vec<u8> {
+pub fn build_dsf(
+    rate: u32,
+    chans: &[Vec<u8>],
+    lsb_first: bool,
+    block: usize,
+    id3: Option<Vec<u8>>,
+) -> Vec<u8> {
     let n = chans[0].len();
     let sets = n.div_ceil(block);
     let payload = sets * block * chans.len();
@@ -11,7 +17,14 @@ pub fn build_dsf(rate: u32, chans: &[Vec<u8>], lsb_first: bool, block: usize, id
     v.extend(b"DSD ");
     v.extend(28u64.to_le_bytes());
     v.extend(((total_pre_meta + id3.as_ref().map_or(0, |t| t.len())) as u64).to_le_bytes());
-    v.extend((if id3.is_some() { total_pre_meta as u64 } else { 0 }).to_le_bytes());
+    v.extend(
+        (if id3.is_some() {
+            total_pre_meta as u64
+        } else {
+            0
+        })
+        .to_le_bytes(),
+    );
     v.extend(b"fmt ");
     v.extend(52u64.to_le_bytes());
     v.extend(1u32.to_le_bytes());
@@ -70,7 +83,10 @@ pub fn build_dff(rate: u32, chans: &[Vec<u8>], cmpr: &[u8; 4]) -> Vec<u8> {
             data.push(c[i]);
         }
     }
-    body.extend(chunk(if cmpr == b"DSD " { b"DSD " } else { b"DST " }, &data));
+    body.extend(chunk(
+        if cmpr == b"DSD " { b"DSD " } else { b"DST " },
+        &data,
+    ));
     let mut v = b"FRM8".to_vec();
     v.extend((body.len() as u64).to_be_bytes());
     v.extend(body);
@@ -88,17 +104,26 @@ pub fn id3_with_gain(track_gain: &str) -> Vec<u8> {
     let n = frame.len();
     let mut v = b"ID3".to_vec();
     v.extend([3, 0, 0]);
-    v.extend([(n >> 21) as u8 & 0x7f, (n >> 14) as u8 & 0x7f, (n >> 7) as u8 & 0x7f, n as u8 & 0x7f]);
+    v.extend([
+        (n >> 21) as u8 & 0x7f,
+        (n >> 14) as u8 & 0x7f,
+        (n >> 7) as u8 & 0x7f,
+        n as u8 & 0x7f,
+    ]);
     v.extend(frame);
     v
 }
 
 /// Deterministic pseudo-random bytes.
 pub fn noise_bytes(n: usize, seed: u64) -> Vec<u8> {
-    let mut x = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+    let mut x = seed
+        .wrapping_mul(6364136223846793005)
+        .wrapping_add(1442695040888963407);
     (0..n)
         .map(|_| {
-            x = x.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            x = x
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             (x >> 40) as u8
         })
         .collect()

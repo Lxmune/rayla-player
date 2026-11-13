@@ -54,7 +54,13 @@ impl Coeffs {
                 )
             }
         };
-        Coeffs { b0: b0 / a0, b1: b1 / a0, b2: b2 / a0, a1: a1 / a0, a2: a2 / a0 }
+        Coeffs {
+            b0: b0 / a0,
+            b1: b1 / a0,
+            b2: b2 / a0,
+            a1: a1 / a0,
+            a2: a2 / a0,
+        }
     }
 }
 
@@ -157,13 +163,21 @@ pub fn parse_autoeq(text: &str) -> Result<AutoEqProfile, Error> {
                 None if kind != EqBandKind::Peak => std::f64::consts::FRAC_1_SQRT_2,
                 None => return Err(bad(line)),
             };
-            bands.push(EqBand { kind, freq_hz, gain_db, q });
+            bands.push(EqBand {
+                kind,
+                freq_hz,
+                gain_db,
+                q,
+            });
         }
     }
     if preamp.is_none() && !seen_filter {
         return Err(Error::InvalidEq("no Preamp or Filter lines found".into()));
     }
-    Ok(AutoEqProfile { preamp_db: preamp.unwrap_or(0.0), bands })
+    Ok(AutoEqProfile {
+        preamp_db: preamp.unwrap_or(0.0),
+        bands,
+    })
 }
 
 #[cfg(test)]
@@ -182,7 +196,12 @@ mod tests {
     }
 
     fn band(kind: EqBandKind, freq_hz: f64, gain_db: f64, q: f64) -> EqBand {
-        EqBand { kind, freq_hz, gain_db, q }
+        EqBand {
+            kind,
+            freq_hz,
+            gain_db,
+            q,
+        }
     }
 
     #[test]
@@ -209,7 +228,10 @@ mod tests {
     fn preamp_applies_and_channels_are_independent() {
         assert!((gain_at(&[], -6.0, 1000.0) + 6.0).abs() < 1e-6);
         let mut eq = Equalizer::new(RATE, 2, 0.0, &[band(EqBandKind::Peak, 500.0, 6.0, 1.0)]);
-        let mut x: Vec<f64> = sine(500.0, RATE, 1, 4800, 0.5).into_iter().flat_map(|s| [s, 0.0]).collect();
+        let mut x: Vec<f64> = sine(500.0, RATE, 1, 4800, 0.5)
+            .into_iter()
+            .flat_map(|s| [s, 0.0])
+            .collect();
         eq.process(&mut x);
         assert!(channel(&x, 2, 1).iter().all(|s| *s == 0.0));
         assert!(rms(&channel(&x, 2, 0)) > 0.3);

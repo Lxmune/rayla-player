@@ -55,9 +55,15 @@ pub fn resolve_gain(
     clip_guard: bool,
     tags: &GainTags,
 ) -> Option<ResolvedGain> {
-    let track = tags.track_gain_db.map(|g| (g, GainSource::Track, tags.track_peak));
-    let album = tags.album_gain_db.map(|g| (g, GainSource::Album, tags.album_peak));
-    let fallback = tags.fallback_gain_db.map(|g| (g, GainSource::Fallback, tags.track_peak));
+    let track = tags
+        .track_gain_db
+        .map(|g| (g, GainSource::Track, tags.track_peak));
+    let album = tags
+        .album_gain_db
+        .map(|g| (g, GainSource::Album, tags.album_peak));
+    let fallback = tags
+        .fallback_gain_db
+        .map(|g| (g, GainSource::Fallback, tags.track_peak));
     let (gain, source, peak) = match mode {
         ReplayGainMode::Off => return None,
         ReplayGainMode::Track => track.or(album).or(fallback)?,
@@ -72,7 +78,11 @@ pub fn resolve_gain(
             clip_limited = true;
         }
     }
-    Some(ResolvedGain { gain_db, source, clip_limited })
+    Some(ResolvedGain {
+        gain_db,
+        source,
+        clip_limited,
+    })
 }
 
 const LOOKAHEAD_SECS: f64 = 0.005;
@@ -143,7 +153,11 @@ impl Limiter {
             self.min_queue.pop_back();
         }
         self.min_queue.push_back((n, self.env));
-        while self.min_queue.front().is_some_and(|&(i, _)| i + window as u64 <= n) {
+        while self
+            .min_queue
+            .front()
+            .is_some_and(|&(i, _)| i + window as u64 <= n)
+        {
             self.min_queue.pop_front();
         }
         let min = self.min_queue.front().map_or(1.0, |&(_, v)| v);
@@ -165,7 +179,11 @@ impl Limiter {
         for _ in 0..self.channels {
             let s = self.delay.pop_front().unwrap_or(0.0);
             // The clamp only catches last-bit rounding of the gain product.
-            out.push(if gain == 1.0 { s } else { (s * gain).clamp(-1.0, 1.0) });
+            out.push(if gain == 1.0 {
+                s
+            } else {
+                (s * gain).clamp(-1.0, 1.0)
+            });
         }
     }
 
@@ -217,18 +235,31 @@ mod tests {
         assert!((r.linear() - 10f64.powf(-3.5 / 20.0)).abs() < 1e-12);
 
         // Missing values fall through to the other tag, then the fallback.
-        let no_album = GainTags { album_gain_db: None, ..t };
+        let no_album = GainTags {
+            album_gain_db: None,
+            ..t
+        };
         let r = resolve_gain(ReplayGainMode::Album, 0.0, false, &no_album).unwrap();
         assert_eq!(r.source, GainSource::Track);
-        let only_fallback = GainTags { fallback_gain_db: Some(-3.0), ..Default::default() };
+        let only_fallback = GainTags {
+            fallback_gain_db: Some(-3.0),
+            ..Default::default()
+        };
         let r = resolve_gain(ReplayGainMode::Track, 0.0, false, &only_fallback).unwrap();
         assert_eq!((r.gain_db, r.source), (-3.0, GainSource::Fallback));
-        assert_eq!(resolve_gain(ReplayGainMode::Track, 6.0, true, &GainTags::default()), None);
+        assert_eq!(
+            resolve_gain(ReplayGainMode::Track, 6.0, true, &GainTags::default()),
+            None
+        );
     }
 
     #[test]
     fn peak_prevents_clipping() {
-        let t = GainTags { track_gain_db: Some(4.0), track_peak: Some(0.8), ..Default::default() };
+        let t = GainTags {
+            track_gain_db: Some(4.0),
+            track_peak: Some(0.8),
+            ..Default::default()
+        };
         let r = resolve_gain(ReplayGainMode::Track, 2.0, true, &t).unwrap();
         assert!(r.clip_limited);
         assert!((r.linear() * 0.8 - 1.0).abs() < 1e-12);

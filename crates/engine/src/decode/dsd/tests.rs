@@ -7,7 +7,10 @@ fn open(bytes: Vec<u8>, plan: &DsdPlan) -> Result<DsdDecoder> {
 }
 
 fn dop_plan() -> DsdPlan {
-    DsdPlan { allow_dop: true, device_rates: vec![176400] }
+    DsdPlan {
+        allow_dop: true,
+        device_rates: vec![176400],
+    }
 }
 
 fn drain(d: &mut DsdDecoder) -> Vec<i32> {
@@ -28,8 +31,17 @@ fn dsf_header_parses_both_bit_orders_and_blocks() {
         let mut d = open(bytes, &dop_plan()).unwrap();
         let info = d.info().clone();
         assert_eq!(info.codec, "DSD64");
-        assert_eq!((info.sample_rate, info.bits, info.channels), (176400, 24, 2));
-        assert_eq!(info.dsd, Some(DsdTrack { rate: DSD64_RATE, dop: true }));
+        assert_eq!(
+            (info.sample_rate, info.bits, info.channels),
+            (176400, 24, 2)
+        );
+        assert_eq!(
+            info.dsd,
+            Some(DsdTrack {
+                rate: DSD64_RATE,
+                dop: true
+            })
+        );
         assert_eq!(info.duration_ms, 40_000 * 1000 / DSD64_RATE as u64);
         let out = drain(&mut d);
         assert_eq!(out.len(), 2 * 2500);
@@ -37,7 +49,11 @@ fn dsf_header_parses_both_bit_orders_and_blocks() {
             for c in 0..2 {
                 let w = (f[c] as u32) >> 8;
                 assert_eq!((w >> 16) as u8, DOP_MARKERS[i % 2], "marker at frame {i}");
-                assert_eq!((w >> 8) as u8, chans[c][2 * i], "hi byte frame {i} ch {c} lsb={lsb}");
+                assert_eq!(
+                    (w >> 8) as u8,
+                    chans[c][2 * i],
+                    "hi byte frame {i} ch {c} lsb={lsb}"
+                );
                 assert_eq!(w as u8, chans[c][2 * i + 1]);
             }
         }
@@ -51,15 +67,27 @@ fn dff_parses_and_dst_is_rejected() {
     let f = parse(&mut Cursor::new(&bytes)).unwrap();
     assert_eq!((f.channels, f.rate, f.samples), (2, 2 * DSD64_RATE, 24_000));
     assert!(!f.is_dsf());
-    let mut d = open(bytes, &DsdPlan { allow_dop: true, device_rates: vec![352800] }).unwrap();
+    let mut d = open(
+        bytes,
+        &DsdPlan {
+            allow_dop: true,
+            device_rates: vec![352800],
+        },
+    )
+    .unwrap();
     assert_eq!(d.info().codec, "DSD128");
     assert_eq!(d.info().sample_rate, 352800);
     let out = drain(&mut d);
     assert_eq!(out.len(), 2 * 1500);
     let w = (out[2] as u32) >> 8; // frame 1, ch 0
-    assert_eq!(((w >> 16) as u8, (w >> 8) as u8, w as u8), (0xFA, chans[0][2], chans[0][3]));
+    assert_eq!(
+        ((w >> 16) as u8, (w >> 8) as u8, w as u8),
+        (0xFA, chans[0][2], chans[0][3])
+    );
 
-    let err = open(build_dff(DSD64_RATE, &chans, b"DST "), &dop_plan()).err().unwrap();
+    let err = open(build_dff(DSD64_RATE, &chans, b"DST "), &dop_plan())
+        .err()
+        .unwrap();
     assert!(format!("{err:#}").contains("DST"), "{err:#}");
 }
 
@@ -86,7 +114,10 @@ fn dop_pads_to_an_even_frame_count_with_idle() {
     assert_eq!(out[3], dop_word(0xFA, 0x66, IDLE));
     // 4 bytes = 2 frames, already even: nothing added.
     let c4 = vec![vec![1, 2, 3, 4], vec![5, 6, 7, 8]];
-    assert_eq!(drain(&mut open(build_dff(DSD64_RATE, &c4, b"DSD "), &dop_plan()).unwrap()).len(), 4);
+    assert_eq!(
+        drain(&mut open(build_dff(DSD64_RATE, &c4, b"DSD "), &dop_plan()).unwrap()).len(),
+        4
+    );
     // 2 bytes = 1 frame: one idle frame appended.
     let c2 = vec![vec![1, 2], vec![5, 6]];
     let out = drain(&mut open(build_dff(DSD64_RATE, &c2, b"DSD "), &dop_plan()).unwrap());
@@ -112,7 +143,13 @@ fn dop_seek_restarts_marker_phase() {
 #[test]
 fn id3_replaygain_in_dsf_is_read() {
     let chans = vec![noise_bytes(100, 1)];
-    let bytes = build_dsf(DSD64_RATE, &chans, true, 4096, Some(id3_with_gain("-6.20 dB")));
+    let bytes = build_dsf(
+        DSD64_RATE,
+        &chans,
+        true,
+        4096,
+        Some(id3_with_gain("-6.20 dB")),
+    );
     let f = parse(&mut Cursor::new(&bytes)).unwrap();
     assert_eq!(f.replay_gain.track_gain_db, Some(-6.2));
 }
@@ -123,7 +160,10 @@ fn sine_dsf(rate: u32, amp: f64, hz: f64, seconds: f64) -> (Vec<u8>, Vec<u8>) {
         .map(|i| amp * (2.0 * std::f64::consts::PI * hz * i as f64 / rate as f64).sin())
         .collect();
     let b = sigma_delta2(&x);
-    (build_dsf(rate, &[b.clone(), b.clone()], true, 4096, None), b)
+    (
+        build_dsf(rate, &[b.clone(), b.clone()], true, 4096, None),
+        b,
+    )
 }
 
 /// Amplitude and relative residual of the best-fit sine at `hz`.
@@ -158,9 +198,19 @@ fn dsd_to_pcm_decodes_a_modulated_sine() {
         assert_eq!(info.dsd, Some(DsdTrack { rate, dop: false }));
         let out = drain(&mut d);
         // Output length: one sample per 8*mult input bits.
-        assert_eq!(out.len(), 2 * raw.len().div_ceil(mult as usize), "length for x{mult}");
+        assert_eq!(
+            out.len(),
+            2 * raw.len().div_ceil(mult as usize),
+            "length for x{mult}"
+        );
         let l: Vec<f64> = out.chunks(2).map(|f| f[0] as f64 / 2147483648.0).collect();
-        assert_eq!(l.iter().zip(out.chunks(2)).filter(|(a, f)| (**a * 2147483648.0) as i32 != f[1]).count(), 0);
+        assert_eq!(
+            l.iter()
+                .zip(out.chunks(2))
+                .filter(|(a, f)| (**a * 2147483648.0) as i32 != f[1])
+                .count(),
+            0
+        );
         // Skip the edges (modulator start-up / filter tail), then fit.
         let body = &l[2000..l.len() - 2000];
         let (amp, resid) = fit(body, 352800.0, 1000.0);

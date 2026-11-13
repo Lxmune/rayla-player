@@ -59,7 +59,12 @@ impl Chain {
         let mut stages = Vec::new();
         let mut gain = 1.0;
         let mut boosts = false;
-        if let Some(rg) = resolve_gain(config.replay_gain, config.preamp_db, config.clip_guard, tags) {
+        if let Some(rg) = resolve_gain(
+            config.replay_gain,
+            config.preamp_db,
+            config.clip_guard,
+            tags,
+        ) {
             if rg.gain_db != 0.0 {
                 gain *= rg.linear();
                 boosts |= rg.gain_db > 0.0;
@@ -83,9 +88,17 @@ impl Chain {
 
         let mut eq = None;
         if config.eq_enabled && (!config.eq_bands.is_empty() || config.eq_preamp_db != 0.0) {
-            eq = Some(Equalizer::new(stream_rate, channels, config.eq_preamp_db, &config.eq_bands));
+            eq = Some(Equalizer::new(
+                stream_rate,
+                channels,
+                config.eq_preamp_db,
+                &config.eq_bands,
+            ));
             let n = config.eq_bands.len();
-            stages.push(format!("Parametric EQ ({n} band{})", if n == 1 { "" } else { "s" }));
+            stages.push(format!(
+                "Parametric EQ ({n} band{})",
+                if n == 1 { "" } else { "s" }
+            ));
         }
 
         let mut conv = None;
@@ -100,7 +113,9 @@ impl Chain {
         if crossfeed.is_some() {
             stages.push(format!("Crossfeed ({:?})", config.crossfeed));
         }
-        debug_assert!(crossfeed.is_some() || config.crossfeed == CrossfeedLevel::Off || channels != 2);
+        debug_assert!(
+            crossfeed.is_some() || config.crossfeed == CrossfeedLevel::Off || channels != 2
+        );
 
         let mut compressor = None;
         let c = &config.compressor;
@@ -110,7 +125,11 @@ impl Chain {
                 "Compressor {}, {}:1{}",
                 signed_db(c.threshold_db),
                 c.ratio,
-                if c.makeup_db != 0.0 { format!(", makeup {}", signed_db(c.makeup_db)) } else { String::new() }
+                if c.makeup_db != 0.0 {
+                    format!(", makeup {}", signed_db(c.makeup_db))
+                } else {
+                    String::new()
+                }
             ));
         }
         let comp_raises = compressor.is_some() && c.makeup_db > 0.0;
@@ -118,10 +137,19 @@ impl Chain {
         let mut resampler = None;
         if output_rate != stream_rate {
             resampler = Some(Resampler::new(stream_rate, output_rate, channels)?);
-            stages.push(format!("Resample {} \u{2192} {} kHz", khz(stream_rate), khz(output_rate)));
+            stages.push(format!(
+                "Resample {} \u{2192} {} kHz",
+                khz(stream_rate),
+                khz(output_rate)
+            ));
         }
 
-        let can_raise = boosts || comp_raises || eq.is_some() || conv.is_some() || crossfeed.is_some() || resampler.is_some();
+        let can_raise = boosts
+            || comp_raises
+            || eq.is_some()
+            || conv.is_some()
+            || crossfeed.is_some()
+            || resampler.is_some();
         let limiter = (config.clip_guard && can_raise).then(|| Limiter::new(output_rate, channels));
         if limiter.is_some() {
             stages.push("Limiter".to_string());
@@ -259,7 +287,11 @@ mod tests {
     }
 
     fn tags() -> GainTags {
-        GainTags { album_gain_db: Some(-6.2), album_peak: Some(0.95), ..Default::default() }
+        GainTags {
+            album_gain_db: Some(-6.2),
+            album_peak: Some(0.95),
+            ..Default::default()
+        }
     }
 
     #[test]
@@ -270,22 +302,56 @@ mod tests {
         let x = noise(2000, 1);
         assert_eq!(run(&mut c, &x, 2, true), x);
         // Features that are enabled but do nothing keep the chain neutral too.
-        let cfg = DspConfig { eq_enabled: true, clip_guard: true, ..Default::default() };
-        assert!(Chain::new(&cfg, 44_100, 2, 44_100, &tags()).unwrap().is_neutral());
-        let cfg = DspConfig { crossfeed: CrossfeedLevel::High, ..Default::default() };
-        assert!(Chain::new(&cfg, 44_100, 1, 44_100, &tags()).unwrap().is_neutral());
+        let cfg = DspConfig {
+            eq_enabled: true,
+            clip_guard: true,
+            ..Default::default()
+        };
+        assert!(Chain::new(&cfg, 44_100, 2, 44_100, &tags())
+            .unwrap()
+            .is_neutral());
+        let cfg = DspConfig {
+            crossfeed: CrossfeedLevel::High,
+            ..Default::default()
+        };
+        assert!(Chain::new(&cfg, 44_100, 1, 44_100, &tags())
+            .unwrap()
+            .is_neutral());
     }
 
     #[test]
     fn compressor_stage_is_described_and_makeup_adds_the_limiter() {
         use crate::CompressorSettings;
-        let comp = CompressorSettings { enabled: true, ..Default::default() };
-        let cfg = DspConfig { compressor: comp, clip_guard: true, ..Default::default() };
+        let comp = CompressorSettings {
+            enabled: true,
+            ..Default::default()
+        };
+        let cfg = DspConfig {
+            compressor: comp,
+            clip_guard: true,
+            ..Default::default()
+        };
         let c = Chain::new(&cfg, 48_000, 2, 48_000, &tags()).unwrap();
-        assert_eq!(c.describe(), vec!["Compressor \u{2212}18.0 dB, 3:1".to_string()]);
-        let cfg = DspConfig { compressor: CompressorSettings { makeup_db: 4.0, ..comp }, clip_guard: true, ..Default::default() };
+        assert_eq!(
+            c.describe(),
+            vec!["Compressor \u{2212}18.0 dB, 3:1".to_string()]
+        );
+        let cfg = DspConfig {
+            compressor: CompressorSettings {
+                makeup_db: 4.0,
+                ..comp
+            },
+            clip_guard: true,
+            ..Default::default()
+        };
         let c = Chain::new(&cfg, 48_000, 2, 48_000, &tags()).unwrap();
-        assert_eq!(c.describe(), vec!["Compressor \u{2212}18.0 dB, 3:1, makeup +4.0 dB".to_string(), "Limiter".to_string()]);
+        assert_eq!(
+            c.describe(),
+            vec![
+                "Compressor \u{2212}18.0 dB, 3:1, makeup +4.0 dB".to_string(),
+                "Limiter".to_string()
+            ]
+        );
     }
 
     fn full_config(ir_path: &str) -> DspConfig {
@@ -297,8 +363,18 @@ mod tests {
             eq_enabled: true,
             eq_preamp_db: -2.0,
             eq_bands: vec![
-                EqBand { kind: EqBandKind::LowShelf, freq_hz: 100.0, gain_db: 4.0, q: 0.7 },
-                EqBand { kind: EqBandKind::Peak, freq_hz: 3000.0, gain_db: -3.0, q: 2.0 },
+                EqBand {
+                    kind: EqBandKind::LowShelf,
+                    freq_hz: 100.0,
+                    gain_db: 4.0,
+                    q: 0.7,
+                },
+                EqBand {
+                    kind: EqBandKind::Peak,
+                    freq_hz: 3000.0,
+                    gain_db: -3.0,
+                    q: 2.0,
+                },
             ],
             convolution_path: Some(ir_path.to_string()),
             crossfeed: CrossfeedLevel::Medium,
@@ -308,7 +384,9 @@ mod tests {
 
     #[test]
     fn full_chain_is_chunking_independent_and_describes_stages() {
-        let ir: Vec<f64> = (0..2500).map(|i| noise(2500, 8)[i] * 0.01 * (-(i as f64) / 600.0).exp()).collect();
+        let ir: Vec<f64> = (0..2500)
+            .map(|i| noise(2500, 8)[i] * 0.01 * (-(i as f64) / 600.0).exp())
+            .collect();
         let path = std::env::temp_dir().join(format!("rayla_dsp_ir_{}.wav", std::process::id()));
         std::fs::write(&path, wav_bytes(3, 32, 44_100, 1, &ir)).unwrap();
         let cfg = full_config(path.to_str().unwrap());
@@ -346,20 +424,49 @@ mod tests {
 
     #[test]
     fn describe_lists_only_active_stages() {
-        let cfg = DspConfig { replay_gain: ReplayGainMode::Track, ..Default::default() };
-        let t = GainTags { track_gain_db: Some(2.0), ..Default::default() };
+        let cfg = DspConfig {
+            replay_gain: ReplayGainMode::Track,
+            ..Default::default()
+        };
+        let t = GainTags {
+            track_gain_db: Some(2.0),
+            ..Default::default()
+        };
         let c = Chain::new(&cfg, 44_100, 2, 44_100, &t).unwrap();
         assert_eq!(c.describe(), ["ReplayGain +2.0 dB (track)"]);
         // No tags: nothing to apply, nothing listed.
-        assert!(Chain::new(&cfg, 44_100, 2, 44_100, &GainTags::default()).unwrap().is_neutral());
-        let cfg = DspConfig { eq_enabled: true, eq_bands: vec![EqBand { kind: EqBandKind::Peak, freq_hz: 1000.0, gain_db: 1.0, q: 1.0 }], ..Default::default() };
-        assert_eq!(Chain::new(&cfg, 44_100, 2, 96_000, &tags()).unwrap().describe(), ["Parametric EQ (1 band)", "Resample 44.1 \u{2192} 96 kHz"]);
+        assert!(Chain::new(&cfg, 44_100, 2, 44_100, &GainTags::default())
+            .unwrap()
+            .is_neutral());
+        let cfg = DspConfig {
+            eq_enabled: true,
+            eq_bands: vec![EqBand {
+                kind: EqBandKind::Peak,
+                freq_hz: 1000.0,
+                gain_db: 1.0,
+                q: 1.0,
+            }],
+            ..Default::default()
+        };
+        assert_eq!(
+            Chain::new(&cfg, 44_100, 2, 96_000, &tags())
+                .unwrap()
+                .describe(),
+            ["Parametric EQ (1 band)", "Resample 44.1 \u{2192} 96 kHz"]
+        );
     }
 
     #[test]
     fn gain_and_limiter_guarantee_no_clipping() {
-        let cfg = DspConfig { replay_gain: ReplayGainMode::Track, clip_guard: true, ..Default::default() };
-        let t = GainTags { track_gain_db: Some(12.0), ..Default::default() };
+        let cfg = DspConfig {
+            replay_gain: ReplayGainMode::Track,
+            clip_guard: true,
+            ..Default::default()
+        };
+        let t = GainTags {
+            track_gain_db: Some(12.0),
+            ..Default::default()
+        };
         let mut c = Chain::new(&cfg, 44_100, 2, 44_100, &t).unwrap();
         assert!(c.describe().contains(&"Limiter".to_string()));
         let x = sine(440.0, 44_100, 2, 20_000, 0.9);

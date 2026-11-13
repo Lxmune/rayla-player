@@ -89,7 +89,11 @@ impl DownloadStore {
     pub fn new(dir: impl Into<PathBuf>) -> Result<Self> {
         let dir = dir.into();
         fs::create_dir_all(&dir).with_context(|| format!("create {}", dir.display()))?;
-        Ok(Self { dir, custom: Mutex::new(None), lock: Mutex::new(()) })
+        Ok(Self {
+            dir,
+            custom: Mutex::new(None),
+            lock: Mutex::new(()),
+        })
     }
 
     fn index_path(&self) -> PathBuf {
@@ -115,12 +119,19 @@ impl DownloadStore {
 
     /// Where an entry's file lives.
     fn entry_dir(&self, e: &IndexEntry) -> PathBuf {
-        e.dir.as_ref().map(PathBuf::from).unwrap_or_else(|| self.dir.clone())
+        e.dir
+            .as_ref()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| self.dir.clone())
     }
 
     /// Folder new downloads go to right now.
     fn target_dir(&self) -> PathBuf {
-        self.custom.lock().unwrap().clone().unwrap_or_else(|| self.dir.clone())
+        self.custom
+            .lock()
+            .unwrap()
+            .clone()
+            .unwrap_or_else(|| self.dir.clone())
     }
 
     /// Choose the folder for new downloads (`None`/empty = default). Creates it
@@ -148,7 +159,11 @@ impl DownloadStore {
     fn record(&self, e: &IndexEntry) -> DownloadRecord {
         DownloadRecord {
             id: e.id.clone(),
-            path: self.entry_dir(e).join(&e.file).to_string_lossy().into_owned(),
+            path: self
+                .entry_dir(e)
+                .join(&e.file)
+                .to_string_lossy()
+                .into_owned(),
             bytes: e.bytes,
             added_at: e.added_at.clone(),
             item: e.item.clone(),
@@ -255,11 +270,17 @@ impl DownloadStore {
         progress: &mut impl FnMut(DownloadProgress),
         cancel: &AtomicBool,
     ) -> Result<u64, Failure> {
-        let cancelled = || Failure { discard: true, err: anyhow!("download cancelled") };
+        let cancelled = || Failure {
+            discard: true,
+            err: anyhow!("download cancelled"),
+        };
         if cancel.load(Ordering::Relaxed) {
             return Err(cancelled());
         }
-        let io = |e: std::io::Error| Failure { discard: false, err: e.into() };
+        let io = |e: std::io::Error| Failure {
+            discard: false,
+            err: e.into(),
+        };
         let agent = crate::source::agent().map_err(|err| Failure { discard: true, err })?;
 
         // Resume only when the sidecar knows the total and the partial file is shorter.
@@ -288,7 +309,11 @@ impl DownloadStore {
         let mut backoff = BACKOFF_MIN;
         let mut last_progress = Instant::now();
         if offset > 0 {
-            progress(DownloadProgress { id: id.to_string(), received_bytes: offset, total_bytes: total });
+            progress(DownloadProgress {
+                id: id.to_string(),
+                received_bytes: offset,
+                total_bytes: total,
+            });
         }
         loop {
             if cancel.load(Ordering::Relaxed) {
@@ -296,12 +321,26 @@ impl DownloadStore {
             }
             let before = offset;
             match self.attempt(
-                req, &agent, &mut file, meta_path, &mut offset, &mut total, &mut buf,
-                &mut last, id, progress, cancel,
+                req,
+                &agent,
+                &mut file,
+                meta_path,
+                &mut offset,
+                &mut total,
+                &mut buf,
+                &mut last,
+                id,
+                progress,
+                cancel,
             ) {
                 Ok(()) => break,
                 Err(Attempt::Cancelled) => return Err(cancelled()),
-                Err(Attempt::Fatal(e)) => return Err(Failure { discard: true, err: e }),
+                Err(Attempt::Fatal(e)) => {
+                    return Err(Failure {
+                        discard: true,
+                        err: e,
+                    })
+                }
                 Err(Attempt::Restart) => {
                     // Server ignored/rejected the Range or the file changed: begin again.
                     file.set_len(0).map_err(io)?;
@@ -341,7 +380,11 @@ impl DownloadStore {
             }
         }
         file.sync_all().map_err(io)?;
-        progress(DownloadProgress { id: id.to_string(), received_bytes: offset, total_bytes: total });
+        progress(DownloadProgress {
+            id: id.to_string(),
+            received_bytes: offset,
+            total_bytes: total,
+        });
         Ok(offset)
     }
 
@@ -387,7 +430,10 @@ impl DownloadStore {
                     .strip_prefix("bytes ")
                     .and_then(|r| r.split('-').next())
                     .and_then(|a| a.trim().parse::<u64>().ok());
-                let t = cr.rsplit('/').next().and_then(|t| t.trim().parse::<u64>().ok());
+                let t = cr
+                    .rsplit('/')
+                    .next()
+                    .and_then(|t| t.trim().parse::<u64>().ok());
                 match (start, t) {
                     (Some(s), Some(t)) if s == *offset && total.map_or(true, |k| k == t) => {
                         *total = Some(t)
@@ -440,7 +486,10 @@ impl DownloadStore {
         }
         if let Some(t) = *total {
             if *offset != t {
-                return Err(Attempt::Retry(anyhow!("download truncated: got {} of {t} bytes", *offset)));
+                return Err(Attempt::Retry(anyhow!(
+                    "download truncated: got {} of {t} bytes",
+                    *offset
+                )));
             }
         }
         Ok(())
@@ -532,7 +581,11 @@ mod tests {
         let store = DownloadStore::new(&dir).unwrap();
         let mut calls = Vec::new();
         let rec = store
-            .download(&request(&srv, "abc", "flac"), |p| calls.push(p), &AtomicBool::new(false))
+            .download(
+                &request(&srv, "abc", "flac"),
+                |p| calls.push(p),
+                &AtomicBool::new(false),
+            )
             .unwrap();
         assert_eq!(rec.id, "abc");
         assert_eq!(rec.bytes, 500_000);
@@ -552,7 +605,11 @@ mod tests {
 
         // Re-downloading replaces the entry instead of duplicating it.
         store
-            .download(&request(&srv, "abc", "mp3"), |_| {}, &AtomicBool::new(false))
+            .download(
+                &request(&srv, "abc", "mp3"),
+                |_| {},
+                &AtomicBool::new(false),
+            )
             .unwrap();
         let list = store.list();
         assert_eq!(list.len(), 1);
@@ -566,7 +623,11 @@ mod tests {
         let store = DownloadStore::new(tmp("dl-throttle")).unwrap();
         let mut n = 0;
         store
-            .download(&request(&srv, "t", "bin"), |_| n += 1, &AtomicBool::new(false))
+            .download(
+                &request(&srv, "t", "bin"),
+                |_| n += 1,
+                &AtomicBool::new(false),
+            )
             .unwrap();
         // 2 MB is ~31 chunks; the local transfer takes far less than 200 ms
         // per chunk, so only the first and the final call should arrive.
@@ -608,7 +669,9 @@ mod tests {
         let store = DownloadStore::new(&dir).unwrap();
         let mut req = request(&srv, "bad", "flac");
         req.headers.clear(); // server answers 403 without the token
-        assert!(store.download(&req, |_| {}, &AtomicBool::new(false)).is_err());
+        assert!(store
+            .download(&req, |_| {}, &AtomicBool::new(false))
+            .is_err());
         assert!(files(&dir).is_empty());
         assert!(store.list().is_empty());
     }
@@ -619,13 +682,21 @@ mod tests {
         let dir = tmp("dl-sanitize");
         let store = DownloadStore::new(&dir).unwrap();
         let rec = store
-            .download(&request(&srv, "../../etc/pa ss", "f.l/ac"), |_| {}, &AtomicBool::new(false))
+            .download(
+                &request(&srv, "../../etc/pa ss", "f.l/ac"),
+                |_| {},
+                &AtomicBool::new(false),
+            )
             .unwrap();
         assert_eq!(rec.id, "etcpass");
         assert_eq!(files(&dir), vec!["etcpass.flac", "index.json"]);
         for bad in [("", "flac"), ("a", ""), ("../", "flac"), ("a", "./")] {
             assert!(store
-                .download(&request(&srv, bad.0, bad.1), |_| {}, &AtomicBool::new(false))
+                .download(
+                    &request(&srv, bad.0, bad.1),
+                    |_| {},
+                    &AtomicBool::new(false)
+                )
                 .is_err());
         }
         assert_eq!(files(&dir), vec!["etcpass.flac", "index.json"]);
@@ -666,15 +737,25 @@ mod tests {
         let store = DownloadStore::new(&dir).unwrap();
         let mut calls = Vec::new();
         let rec = store
-            .download(&request(&srv, "d", "flac"), |p| calls.push(p), &AtomicBool::new(false))
+            .download(
+                &request(&srv, "d", "flac"),
+                |p| calls.push(p),
+                &AtomicBool::new(false),
+            )
             .unwrap();
         assert_eq!(fs::read(&rec.path).unwrap(), data);
         let reqs = srv.requests();
         assert_eq!(reqs.len(), 2, "{reqs:?}");
         assert_eq!(reqs[0], "");
-        assert!(reqs[1].starts_with("bytes=") && reqs[1].ends_with('-') && reqs[1] != "bytes=0-", "{reqs:?}");
+        assert!(
+            reqs[1].starts_with("bytes=") && reqs[1].ends_with('-') && reqs[1] != "bytes=0-",
+            "{reqs:?}"
+        );
         let last = calls.last().unwrap();
-        assert_eq!((last.received_bytes, last.total_bytes), (600_000, Some(600_000)));
+        assert_eq!(
+            (last.received_bytes, last.total_bytes),
+            (600_000, Some(600_000))
+        );
         assert!(calls.iter().all(|p| p.total_bytes == Some(600_000)));
         assert_eq!(files(&dir), vec!["d.flac", "index.json"]);
     }
@@ -689,7 +770,11 @@ mod tests {
         assert!(store.list().is_empty(), "partial files are not downloads");
         let mut calls = Vec::new();
         let rec = store
-            .download(&request(&srv, "r", "flac"), |p| calls.push(p), &AtomicBool::new(false))
+            .download(
+                &request(&srv, "r", "flac"),
+                |p| calls.push(p),
+                &AtomicBool::new(false),
+            )
             .unwrap();
         assert_eq!(srv.requests(), vec!["bytes=123456-".to_string()]);
         assert_eq!(fs::read(&rec.path).unwrap(), data);
@@ -740,7 +825,11 @@ mod tests {
         seed_part(&dir, "k.flac", &data[..500_000], Some(3_000_000));
         let cancel = AtomicBool::new(false);
         let err = store
-            .download(&request(&srv, "k", "flac"), |_| cancel.store(true, Ordering::Relaxed), &cancel)
+            .download(
+                &request(&srv, "k", "flac"),
+                |_| cancel.store(true, Ordering::Relaxed),
+                &cancel,
+            )
             .unwrap_err();
         assert!(err.to_string().contains("cancel"), "{err}");
         assert!(files(&dir).is_empty(), "{:?}", files(&dir));
@@ -752,10 +841,20 @@ mod tests {
         let dir = tmp("dl-custom-default");
         let custom = tmp("dl-custom-dir");
         let store = DownloadStore::new(&dir).unwrap();
-        store.download(&request(&srv, "old", "flac"), |_| {}, &AtomicBool::new(false)).unwrap();
+        store
+            .download(
+                &request(&srv, "old", "flac"),
+                |_| {},
+                &AtomicBool::new(false),
+            )
+            .unwrap();
         store.set_dir(Some(custom.to_str().unwrap())).unwrap();
         let rec = store
-            .download(&request(&srv, "new", "flac"), |_| {}, &AtomicBool::new(false))
+            .download(
+                &request(&srv, "new", "flac"),
+                |_| {},
+                &AtomicBool::new(false),
+            )
             .unwrap();
         assert_eq!(rec.path, custom.join("new.flac").to_string_lossy());
         assert_eq!(files(&custom), vec!["new.flac"]);
@@ -784,7 +883,9 @@ mod tests {
         assert!(store.set_dir(Some("relative/path")).is_err());
         let blocker = dir.join("afile");
         fs::write(&blocker, b"x").unwrap();
-        assert!(store.set_dir(Some(blocker.join("sub").to_str().unwrap())).is_err());
+        assert!(store
+            .set_dir(Some(blocker.join("sub").to_str().unwrap()))
+            .is_err());
         assert_eq!(store.target_dir(), dir);
     }
 

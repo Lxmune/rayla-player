@@ -167,7 +167,10 @@ fn parse_dsf<R: Read + Seek + ?Sized>(r: &mut R) -> Result<DsdFile> {
         bail!("DSF: bad fmt chunk");
     }
     if le32(&f[16..]) != 0 {
-        bail!("DSF: compressed or unknown DSD format id {}", le32(&f[16..]));
+        bail!(
+            "DSF: compressed or unknown DSD format id {}",
+            le32(&f[16..])
+        );
     }
     let channels = le32(&f[24..]);
     let rate = le32(&f[28..]);
@@ -302,7 +305,13 @@ fn decode_text(enc: u8, b: &[u8]) -> String {
             }
             let u: Vec<u16> = b
                 .chunks_exact(2)
-                .map(|c| if be { u16::from_be_bytes([c[0], c[1]]) } else { u16::from_le_bytes([c[0], c[1]]) })
+                .map(|c| {
+                    if be {
+                        u16::from_be_bytes([c[0], c[1]])
+                    } else {
+                        u16::from_le_bytes([c[0], c[1]])
+                    }
+                })
                 .collect();
             String::from_utf16_lossy(&u)
         }
@@ -325,11 +334,19 @@ fn read_id3_gain<R: Read + Seek + ?Sized>(r: &mut R, offset: u64) -> Result<Repl
     t.truncate(n);
     let mut i = 0;
     if flags & 0x40 != 0 && t.len() >= 4 {
-        i = if ver >= 4 { syncsafe(&t) } else { be32(&t) as usize + 4 };
+        i = if ver >= 4 {
+            syncsafe(&t)
+        } else {
+            be32(&t) as usize + 4
+        };
     }
     let mut g = ReplayGain::default();
     while i + 10 <= t.len() && t[i] != 0 {
-        let sz = if ver >= 4 { syncsafe(&t[i + 4..]) } else { be32(&t[i + 4..]) as usize };
+        let sz = if ver >= 4 {
+            syncsafe(&t[i + 4..])
+        } else {
+            be32(&t[i + 4..]) as usize
+        };
         let body = &t[(i + 10).min(t.len())..(i + 10 + sz).min(t.len())];
         if &t[i..i + 4] == b"TXXX" && !body.is_empty() {
             let enc = body[0];
@@ -337,7 +354,9 @@ fn read_id3_gain<R: Read + Seek + ?Sized>(r: &mut R, offset: u64) -> Result<Repl
             // Description ends at the first terminator (1 or 2 bytes by encoding).
             let wide = matches!(enc, 1 | 2);
             let split = if wide {
-                rest.chunks_exact(2).position(|c| c == [0, 0]).map(|p| (p * 2, 2))
+                rest.chunks_exact(2)
+                    .position(|c| c == [0, 0])
+                    .map(|p| (p * 2, 2))
             } else {
                 rest.iter().position(|&c| c == 0).map(|p| (p, 1))
             };
@@ -578,7 +597,11 @@ impl DsdToPcm {
                     .enumerate()
                     .map(|(k, &b)| self.lut[k * 256 + b as usize])
                     .sum();
-                out.push((y * 2147483648.0).round().clamp(-2147483648.0, 2147483647.0) as i32);
+                out.push(
+                    (y * 2147483648.0)
+                        .round()
+                        .clamp(-2147483648.0, 2147483647.0) as i32,
+                );
             }
         }
         for w in &mut self.win {
@@ -593,7 +616,10 @@ impl DsdToPcm {
 // ---- decoder ------------------------------------------------------------------
 
 enum Mode {
-    Dop { packer: DopPacker, carry: Vec<Vec<u8>> },
+    Dop {
+        packer: DopPacker,
+        carry: Vec<Vec<u8>>,
+    },
     Pcm(DsdToPcm),
 }
 
@@ -613,7 +639,10 @@ impl DsdDecoder {
         let duration_ms = f.samples * 1000 / f.rate as u64;
         let (mode, sample_rate, bits) = if dop {
             (
-                Mode::Dop { packer: DopPacker::default(), carry: vec![Vec::new(); ch] },
+                Mode::Dop {
+                    packer: DopPacker::default(),
+                    carry: vec![Vec::new(); ch],
+                },
                 f.rate / 16,
                 24,
             )
@@ -633,7 +662,12 @@ impl DsdDecoder {
             dsd: Some(DsdTrack { rate: f.rate, dop }),
         };
         Ok(DsdDecoder {
-            src: DsdSource { r: src, f, pos: 0, cache: None },
+            src: DsdSource {
+                r: src,
+                f,
+                pos: 0,
+                cache: None,
+            },
             info,
             mode,
             finished: false,
@@ -720,11 +754,11 @@ impl DsdDecoder {
 /// Used by `Decoder::open`: sniff the magic, rewinding the source.
 pub fn sniff(src: &mut Box<dyn MediaSource>) -> bool {
     let mut m = [0u8; 4];
-    let ok = src.seek(SeekFrom::Start(0)).is_ok() && read_full(src, &mut m).map_or(false, |n| n == 4);
+    let ok =
+        src.seek(SeekFrom::Start(0)).is_ok() && read_full(src, &mut m).map_or(false, |n| n == 4);
     let _ = src.seek(SeekFrom::Start(0));
     ok && is_dsd_magic(&m)
 }
-
 
 #[cfg(test)]
 pub(crate) mod fixtures;

@@ -94,7 +94,9 @@ struct HwDevice {
 fn hw_devices() -> Vec<HwDevice> {
     let mut out = Vec::new();
     for card in alsa::card::Iter::new().flatten() {
-        let Ok(ctl) = Ctl::from_card(&card, false) else { continue };
+        let Ok(ctl) = Ctl::from_card(&card, false) else {
+            continue;
+        };
         let Ok(info) = ctl.card_info() else { continue };
         let (Ok(card_id), card_name) = (info.get_id(), info.get_name().unwrap_or("Sound card"))
         else {
@@ -129,10 +131,15 @@ fn probe(id: &str) -> Option<(Vec<u32>, u32)> {
         .into_iter()
         .filter(|&r| hwp.test_rate(r).is_ok())
         .collect();
-    let bits = [Encoding::S32, Encoding::S24In32, Encoding::S24Packed, Encoding::S16]
-        .into_iter()
-        .find(|e| hwp.test_format(e.pcm_format()).is_ok())
-        .map_or(0, Encoding::bits);
+    let bits = [
+        Encoding::S32,
+        Encoding::S24In32,
+        Encoding::S24Packed,
+        Encoding::S16,
+    ]
+    .into_iter()
+    .find(|e| hwp.test_format(e.pcm_format()).is_ok())
+    .map_or(0, Encoding::bits);
     Some((rates, bits))
 }
 
@@ -188,8 +195,8 @@ fn device_name(id: &str) -> String {
 fn open_exclusive(id: &str, want: Format) -> Result<AlsaOutput> {
     let mut last = anyhow!("no supported format");
     for enc in candidates(want.bits) {
-        let pcm = PCM::new(id, Direction::Playback, true)
-            .with_context(|| format!("cannot open {id}"))?;
+        let pcm =
+            PCM::new(id, Direction::Playback, true).with_context(|| format!("cannot open {id}"))?;
         match configure(&pcm, want, enc, false) {
             Ok(()) => {
                 return AlsaOutput::new(
@@ -296,7 +303,10 @@ impl AlsaOutput {
                     }
                 }
                 // Underrun (EPIPE) or suspend (ESTRPIPE): recover and retry.
-                Err(e) => self.pcm.try_recover(e, true).context("audio device error")?,
+                Err(e) => self
+                    .pcm
+                    .try_recover(e, true)
+                    .context("audio device error")?,
             }
         }
         self.staging.clear();

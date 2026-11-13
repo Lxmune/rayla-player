@@ -45,7 +45,10 @@ impl ImpulseResponse {
         let channels = (0..n)
             .map(|c| out.iter().skip(c).step_by(n).map(|s| s * scale).collect())
             .collect();
-        Ok(ImpulseResponse { sample_rate: rate, channels })
+        Ok(ImpulseResponse {
+            sample_rate: rate,
+            channels,
+        })
     }
 }
 
@@ -63,7 +66,8 @@ pub fn parse_wav_ir(bytes: &[u8]) -> Result<ImpulseResponse, Error> {
         return Err(bad("not a RIFF/WAVE file"));
     }
     let u16_at = |o: usize| u16::from_le_bytes([bytes[o], bytes[o + 1]]);
-    let u32_at = |o: usize| u32::from_le_bytes([bytes[o], bytes[o + 1], bytes[o + 2], bytes[o + 3]]);
+    let u32_at =
+        |o: usize| u32::from_le_bytes([bytes[o], bytes[o + 1], bytes[o + 2], bytes[o + 3]]);
     let (mut fmt, mut data) = (None, None);
     let mut pos = 12;
     while pos + 8 <= bytes.len() {
@@ -77,7 +81,12 @@ pub fn parse_wav_ir(bytes: &[u8]) -> Result<ImpulseResponse, Error> {
                 if tag == 0xFFFE && end - body >= 26 {
                     tag = u16_at(body + 24);
                 }
-                fmt = Some((tag, u16_at(body + 2) as usize, u32_at(body + 4), u16_at(body + 14) as usize));
+                fmt = Some((
+                    tag,
+                    u16_at(body + 2) as usize,
+                    u32_at(body + 4),
+                    u16_at(body + 14) as usize,
+                ));
             }
             b"data" => data = Some(&bytes[body..end]),
             _ => {}
@@ -96,7 +105,11 @@ pub fn parse_wav_ir(bytes: &[u8]) -> Result<ImpulseResponse, Error> {
         (1, 32) => |b| i32::from_le_bytes([b[0], b[1], b[2], b[3]]) as f64 / 2_147_483_648.0,
         (3, 32) => |b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]) as f64,
         (3, 64) => |b| f64::from_le_bytes([b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]]),
-        _ => return Err(Error::InvalidWav(format!("unsupported format tag {tag} / {bits} bits"))),
+        _ => {
+            return Err(Error::InvalidWav(format!(
+                "unsupported format tag {tag} / {bits} bits"
+            )))
+        }
     };
     let frames = data.len() / (width * channels);
     if frames == 0 {
@@ -108,7 +121,10 @@ pub fn parse_wav_ir(bytes: &[u8]) -> Result<ImpulseResponse, Error> {
             c.push(decode(s));
         }
     }
-    Ok(ImpulseResponse { sample_rate, channels: out })
+    Ok(ImpulseResponse {
+        sample_rate,
+        channels: out,
+    })
 }
 
 struct ChannelState {
@@ -284,7 +300,9 @@ impl Convolver {
         for st in &mut self.chans {
             st.input.fill(0.0);
             st.prev.fill(0.0);
-            st.fdl.iter_mut().for_each(|s| s.fill(Complex::new(0.0, 0.0)));
+            st.fdl
+                .iter_mut()
+                .for_each(|s| s.fill(Complex::new(0.0, 0.0)));
         }
         self.pos = 0;
         self.filled = 0;
@@ -299,7 +317,10 @@ mod tests {
     use crate::test_util::*;
 
     fn ir(channels: Vec<Vec<f64>>) -> ImpulseResponse {
-        ImpulseResponse { sample_rate: 48_000, channels }
+        ImpulseResponse {
+            sample_rate: 48_000,
+            channels,
+        }
     }
 
     fn run(c: &mut Convolver, x: &[f64], ch: usize, chunked_in: bool) -> Vec<f64> {
@@ -361,7 +382,10 @@ mod tests {
         // Mono IR on stereo applies to both channels; stream is reusable after flush.
         let mut m = Convolver::new(&ir(vec![h0.clone()]), 48_000, 2).unwrap();
         let ym = run(&mut m, &x, 2, false);
-        assert!(channel(&ym, 2, 1).iter().zip(&direct(&r, &h0)).all(|(a, b)| (a - b).abs() < 1e-8));
+        assert!(channel(&ym, 2, 1)
+            .iter()
+            .zip(&direct(&r, &h0))
+            .all(|(a, b)| (a - b).abs() < 1e-8));
         let ym2 = run(&mut m, &x, 2, true);
         assert!(ym.iter().zip(&ym2).all(|(a, b)| (a - b).abs() < 1e-12));
     }
@@ -375,10 +399,19 @@ mod tests {
     fn ir_is_resampled_to_stream_rate() {
         let mut h = vec![0.0; 100];
         h[10] = 1.0;
-        let i = ImpulseResponse { sample_rate: 24_000, channels: vec![h] };
+        let i = ImpulseResponse {
+            sample_rate: 24_000,
+            channels: vec![h],
+        };
         let r = i.resampled(48_000).unwrap();
         assert_eq!(r.len(), 200);
-        let peak = r.channels[0].iter().enumerate().fold((0, 0.0f64), |m, (i, s)| if s.abs() > m.1 { (i, s.abs()) } else { m });
+        let peak = r.channels[0]
+            .iter()
+            .enumerate()
+            .fold(
+                (0, 0.0f64),
+                |m, (i, s)| if s.abs() > m.1 { (i, s.abs()) } else { m },
+            );
         assert!(peak.0.abs_diff(20) <= 1, "peak at {}", peak.0);
         // Sum (DC gain) is preserved.
         assert!((r.channels[0].iter().sum::<f64>() - 1.0).abs() < 0.02);
@@ -387,14 +420,22 @@ mod tests {
     #[test]
     fn loads_wav_formats() {
         let s = [0.5, -0.25, 0.0, 0.75];
-        for (fmt, bits, tol) in [(1u16, 16u16, 1e-4), (1, 24, 1e-6), (1, 32, 1e-9), (3, 32, 1e-9)] {
+        for (fmt, bits, tol) in [
+            (1u16, 16u16, 1e-4),
+            (1, 24, 1e-6),
+            (1, 32, 1e-9),
+            (3, 32, 1e-9),
+        ] {
             let wav = wav_bytes(fmt, bits, 44_100, 2, &s);
             let ir = parse_wav_ir(&wav).unwrap();
             assert_eq!(ir.sample_rate, 44_100);
             assert_eq!(ir.channels.len(), 2);
             assert_eq!(ir.len(), 2);
             for (i, v) in s.iter().enumerate() {
-                assert!((ir.channels[i % 2][i / 2] - v).abs() < tol, "fmt {fmt} bits {bits}");
+                assert!(
+                    (ir.channels[i % 2][i / 2] - v).abs() < tol,
+                    "fmt {fmt} bits {bits}"
+                );
             }
         }
         assert!(parse_wav_ir(b"not a wav at all").is_err());

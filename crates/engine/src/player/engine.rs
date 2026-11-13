@@ -324,7 +324,10 @@ impl Core {
                 if d.dop {
                     stages.insert(0, "DoP".to_string());
                 } else {
-                    stages.insert(0, format!("DSD→PCM {:.1} kHz", info.sample_rate as f64 / 1000.0));
+                    stages.insert(
+                        0,
+                        format!("DSD→PCM {:.1} kHz", info.sample_rate as f64 / 1000.0),
+                    );
                 }
                 (d.rate, 1, d.dop && exact)
             }
@@ -502,7 +505,11 @@ impl Core {
             && dsp_is_neutral(&self.dsp);
         DsdPlan {
             allow_dop,
-            device_rates: if allow_dop { self.device_rates() } else { Vec::new() },
+            device_rates: if allow_dop {
+                self.device_rates()
+            } else {
+                Vec::new()
+            },
         }
     }
 
@@ -539,7 +546,10 @@ impl Core {
         }
         let ok = self.out.as_ref().is_some_and(|o| {
             let i = o.info();
-            i.exclusive && i.format.rate == want.rate && i.format.channels == want.channels && i.format.bits >= 24
+            i.exclusive
+                && i.format.rate == want.rate
+                && i.format.channels == want.channels
+                && i.format.bits >= 24
         });
         if ok {
             return false;
@@ -550,7 +560,10 @@ impl Core {
         let ms = cur.pos_frames * 1000 / cur.info.as_ref().unwrap().sample_rate as u64;
         self.respawn_cur(ms);
         let req = self.cur.as_ref().unwrap().req.clone();
-        self.emit_error(Some(&req), "device does not accept DoP; playing DSD as PCM".into());
+        self.emit_error(
+            Some(&req),
+            "device does not accept DoP; playing DSD as PCM".into(),
+        );
         true
     }
 
@@ -585,7 +598,11 @@ impl Core {
     }
 
     /// Build the DSP stream and the device format for a decoded track.
-    fn prepare(&mut self, info: &TrackInfo, req: &TrackRequest) -> Result<(DspStream, Format), String> {
+    fn prepare(
+        &mut self,
+        info: &TrackInfo,
+        req: &TrackRequest,
+    ) -> Result<(DspStream, Format), String> {
         let out_rate = self.out_rate_for(info.sample_rate);
         let stream = DspStream::new(&self.dsp, info, req, out_rate)?;
         let fmt = Format {
@@ -979,7 +996,10 @@ impl Core {
             && self.out.is_some()
             && self.dsp.crossfade_ms > 0
             && old.is_some()
-            && self.next.as_ref().is_some_and(|n| albums_differ(&ended.req, &n.req));
+            && self
+                .next
+                .as_ref()
+                .is_some_and(|n| albums_differ(&ended.req, &n.req));
 
         // Audio the old track still owes the device (all of it, or all but
         // the crossfade tail).

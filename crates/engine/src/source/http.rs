@@ -57,7 +57,12 @@ impl HttpSource {
     ) -> Result<Self> {
         let entry = cache::attach(url, headers, cache_dir, key, track_id)?;
         let file = File::open(&entry.entry().data_path)?;
-        let s = HttpSource { entry, file, pos: 0, cancel };
+        let s = HttpSource {
+            entry,
+            file,
+            pos: 0,
+            cancel,
+        };
         s.wait_ready()?;
         Ok(s)
     }
@@ -82,13 +87,18 @@ impl HttpSource {
             if st.progress != seen {
                 (seen, since) = (st.progress, Instant::now());
             } else if since.elapsed() >= STALL_LIMIT {
-                bail!("no response: {}", st.error.as_deref().unwrap_or("timed out"));
+                bail!(
+                    "no response: {}",
+                    st.error.as_deref().unwrap_or("timed out")
+                );
             }
         }
     }
 
     fn cancelled(&self) -> bool {
-        self.cancel.as_ref().is_some_and(|c| c.load(Ordering::Relaxed))
+        self.cancel
+            .as_ref()
+            .is_some_and(|c| c.load(Ordering::Relaxed))
     }
 
     /// Whether every byte is on disk.

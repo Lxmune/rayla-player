@@ -56,7 +56,10 @@ fn clean_text(s: &str) -> Option<String> {
 }
 
 fn clean_opt(s: &Option<String>) -> Option<String> {
-    s.as_deref().map(str::trim).filter(|s| !s.is_empty()).map(str::to_string)
+    s.as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
 }
 
 /// Render the `activity` JSON object.
@@ -104,7 +107,11 @@ pub(crate) fn render_activity(a: &DiscordActivity) -> String {
             if label.is_empty() || url.is_empty() || url.len() > 512 {
                 return None;
             }
-            Some(format!("{{\"label\":{},\"url\":{}}}", json_str(&label), json_str(url)))
+            Some(format!(
+                "{{\"label\":{},\"url\":{}}}",
+                json_str(&label),
+                json_str(url)
+            ))
         })
         .take(2)
         .collect();
@@ -144,7 +151,10 @@ fn read_frame(r: &mut dyn Read) -> io::Result<(u32, String)> {
     let op = u32::from_le_bytes([h[0], h[1], h[2], h[3]]);
     let len = u32::from_le_bytes([h[4], h[5], h[6], h[7]]) as usize;
     if len > MAX_FRAME {
-        return Err(io::Error::new(io::ErrorKind::InvalidData, "oversized frame"));
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "oversized frame",
+        ));
     }
     let mut b = vec![0u8; len];
     r.read_exact(&mut b)?;
@@ -187,7 +197,11 @@ impl UnixTransport {
         let mut dirs = Vec::new();
         for b in bases {
             for sub in ["", "app/com.discordapp.Discord", "snap.discord"] {
-                let d = if sub.is_empty() { b.clone() } else { b.join(sub) };
+                let d = if sub.is_empty() {
+                    b.clone()
+                } else {
+                    b.join(sub)
+                };
                 if !dirs.contains(&d) {
                     dirs.push(d);
                 }
@@ -307,7 +321,10 @@ pub(crate) struct Worker {
 impl Worker {
     pub(crate) fn new(transport: Box<dyn Transport>, cfg: Config) -> Self {
         let shared = Arc::new(Shared {
-            st: Mutex::new(State { desired: None, shutdown: false }),
+            st: Mutex::new(State {
+                desired: None,
+                shutdown: false,
+            }),
             cv: Condvar::new(),
         });
         let s = shared.clone();
@@ -368,7 +385,10 @@ fn open(transport: &dyn Transport, app_id: &str, cfg: &Config) -> io::Result<Liv
     loop {
         let body = read_reply(&mut *conn)?;
         if body.contains("\"READY\"") {
-            return Ok(Live { conn, app_id: app_id.to_string() });
+            return Ok(Live {
+                conn,
+                app_id: app_id.to_string(),
+            });
         }
         if body.contains("\"evt\":\"ERROR\"") {
             return Err(io::Error::new(io::ErrorKind::PermissionDenied, body));
@@ -377,7 +397,11 @@ fn open(transport: &dyn Transport, app_id: &str, cfg: &Config) -> io::Result<Liv
 }
 
 fn send_activity(l: &mut Live, activity: Option<&str>) -> io::Result<()> {
-    write_frame(&mut *l.conn, OP_FRAME, &set_activity_json(activity, &nonce()))?;
+    write_frame(
+        &mut *l.conn,
+        OP_FRAME,
+        &set_activity_json(activity, &nonce()),
+    )?;
     // Discord answers every command; an ERROR reply is non-fatal.
     let _ = read_reply(&mut *l.conn)?;
     Ok(())
@@ -415,7 +439,11 @@ fn run(shared: Arc<Shared>, transport: Box<dyn Transport>, cfg: Config) {
                         if at <= now {
                             break d.clone();
                         }
-                        st = shared.cv.wait_timeout(st, at - now).unwrap_or_else(|e| e.into_inner()).0;
+                        st = shared
+                            .cv
+                            .wait_timeout(st, at - now)
+                            .unwrap_or_else(|e| e.into_inner())
+                            .0;
                     }
                     _ => st = shared.cv.wait(st).unwrap_or_else(|e| e.into_inner()),
                 }
@@ -464,7 +492,11 @@ static WORKER: OnceLock<Worker> = OnceLock::new();
 pub fn set_activity(application_id: String, activity: Option<DiscordActivity>) -> Result<()> {
     let w = WORKER.get_or_init(|| Worker::new(default_transport(), Config::default()));
     let app = application_id.trim().to_string();
-    let rendered = if app.is_empty() { None } else { activity.as_ref().map(render_activity) };
+    let rendered = if app.is_empty() {
+        None
+    } else {
+        activity.as_ref().map(render_activity)
+    };
     w.set(app, rendered);
     Ok(())
 }
@@ -475,8 +507,8 @@ pub fn set_activity(application_id: String, activity: Option<DiscordActivity>) -
 mod tests {
     use super::*;
     use crate::api::engine::DiscordButton;
-        use std::sync::mpsc::{channel, Receiver, Sender};
     use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::mpsc::{channel, Receiver, Sender};
 
     type Msg = (usize, u32, String);
 
@@ -491,8 +523,18 @@ mod tests {
         let (t1, r1) = channel();
         let (t2, r2) = channel();
         (
-            Mem { rx: r1, buf: vec![], pos: 0, tx: t2 },
-            Mem { rx: r2, buf: vec![], pos: 0, tx: t1 },
+            Mem {
+                rx: r1,
+                buf: vec![],
+                pos: 0,
+                tx: t2,
+            },
+            Mem {
+                rx: r2,
+                buf: vec![],
+                pos: 0,
+                tx: t1,
+            },
         )
     }
     impl Read for Mem {
@@ -515,7 +557,9 @@ mod tests {
     }
     impl Write for Mem {
         fn write(&mut self, b: &[u8]) -> io::Result<usize> {
-            self.tx.send(b.to_vec()).map_err(|_| io::Error::from(io::ErrorKind::BrokenPipe))?;
+            self.tx
+                .send(b.to_vec())
+                .map_err(|_| io::Error::from(io::ErrorKind::BrokenPipe))?;
             Ok(b.len())
         }
         fn flush(&mut self) -> io::Result<()> {
@@ -534,7 +578,9 @@ mod tests {
                 return Err(io::ErrorKind::NotFound.into());
             }
             let (c, s) = mem_pair();
-            self.accept.send(s).map_err(|_| io::Error::from(io::ErrorKind::NotFound))?;
+            self.accept
+                .send(s)
+                .map_err(|_| io::Error::from(io::ErrorKind::NotFound))?;
             Ok(Box::new(c))
         }
     }
@@ -558,7 +604,11 @@ mod tests {
                 let _ = tx.send((idx, op, body));
                 match op {
                     0 => {
-                        let _ = write_frame(&mut s, 1, "{\"cmd\":\"DISPATCH\",\"evt\":\"READY\",\"data\":{}}");
+                        let _ = write_frame(
+                            &mut s,
+                            1,
+                            "{\"cmd\":\"DISPATCH\",\"evt\":\"READY\",\"data\":{}}",
+                        );
                     }
                     1 => {
                         let _ = write_frame(&mut s, 1, "{\"cmd\":\"SET_ACTIVITY\",\"evt\":null}");
@@ -584,7 +634,10 @@ mod tests {
             }
         });
         Fake {
-            transport: Some(Box::new(FakeTransport { up: up.clone(), accept: acc_tx })),
+            transport: Some(Box::new(FakeTransport {
+                up: up.clone(),
+                accept: acc_tx,
+            })),
             rx,
             up,
             drop_after_activity: df,
@@ -634,7 +687,8 @@ mod tests {
     }
 
     fn recv(f: &Fake) -> Msg {
-        f.rx.recv_timeout(Duration::from_secs(3)).expect("no frame from client")
+        f.rx.recv_timeout(Duration::from_secs(3))
+            .expect("no frame from client")
     }
 
     fn act(details: &str) -> DiscordActivity {
@@ -663,12 +717,18 @@ mod tests {
         a.start_timestamp_ms = Some(1_700_000_000_000);
         a.end_timestamp_ms = Some(1_700_000_200_000);
         a.buttons = (0..3)
-            .map(|i| DiscordButton { label: format!("b{i}"), url: format!("https://e/{i}") })
+            .map(|i| DiscordButton {
+                label: format!("b{i}"),
+                url: format!("https://e/{i}"),
+            })
             .collect();
         w.set("123456".into(), Some(render_activity(&a)));
 
         let (_, op, body) = recv(&f);
-        assert_eq!((op, body.as_str()), (0, "{\"v\":1,\"client_id\":\"123456\"}"));
+        assert_eq!(
+            (op, body.as_str()),
+            (0, "{\"v\":1,\"client_id\":\"123456\"}")
+        );
         let (_, op, body) = recv(&f);
         assert_eq!(op, 1);
         assert!(body.starts_with("{\"cmd\":\"SET_ACTIVITY\",\"args\":{\"pid\":"));
@@ -789,6 +849,9 @@ mod tests {
         }
         let (_, _, body) = recv(&f);
         assert!(body.contains("E5"), "{body}");
-        assert!(f.rx.recv_timeout(Duration::from_millis(600)).is_err(), "extra frames sent");
+        assert!(
+            f.rx.recv_timeout(Duration::from_millis(600)).is_err(),
+            "extra frames sent"
+        );
     }
 }

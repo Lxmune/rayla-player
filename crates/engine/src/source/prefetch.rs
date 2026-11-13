@@ -35,7 +35,10 @@ impl Prefetcher {
     pub fn set(&self, tracks: Vec<TrackRequest>) {
         let (m, cv) = &*self.shared;
         let mut g = m.lock().unwrap();
-        g.tracks = tracks.into_iter().filter(|t| t.local_path.is_none()).collect();
+        g.tracks = tracks
+            .into_iter()
+            .filter(|t| t.local_path.is_none())
+            .collect();
         g.generation += 1;
         cv.notify_all();
     }

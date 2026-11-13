@@ -71,7 +71,10 @@ impl Resampler {
         while self.pending[0].len() >= CHUNK {
             let chunk = self
                 .inner
-                .process(&self.pending.iter().map(|p| &p[..CHUNK]).collect::<Vec<_>>(), None)
+                .process(
+                    &self.pending.iter().map(|p| &p[..CHUNK]).collect::<Vec<_>>(),
+                    None,
+                )
                 .expect("resampler input has the configured shape");
             self.emit(&chunk, out, None);
             self.pending.iter_mut().for_each(|p| {
@@ -102,7 +105,12 @@ impl Resampler {
     }
 
     /// Resample a complete interleaved buffer in one go.
-    pub fn resample_all(in_rate: u32, out_rate: u32, channels: usize, input: &[f64]) -> Result<Vec<f64>, Error> {
+    pub fn resample_all(
+        in_rate: u32,
+        out_rate: u32,
+        channels: usize,
+        input: &[f64],
+    ) -> Result<Vec<f64>, Error> {
         let mut r = Resampler::new(in_rate, out_rate, channels)?;
         let mut out = Vec::new();
         r.process(input, &mut out);
@@ -130,7 +138,12 @@ mod tests {
 
     #[test]
     fn frame_count_matches_ratio_for_any_chunking() {
-        for (a, b) in [(44_100, 96_000), (48_000, 44_100), (44_100, 48_000), (96_000, 44_100)] {
+        for (a, b) in [
+            (44_100, 96_000),
+            (48_000, 44_100),
+            (44_100, 48_000),
+            (96_000, 44_100),
+        ] {
             for frames in [1usize, 700, 1024, 5000, 30_001] {
                 let x = noise(frames * 2, 3);
                 let expected = (frames as f64 * b as f64 / a as f64).round() as usize;
@@ -156,7 +169,10 @@ mod tests {
         assert!((freq - 1000.0).abs() < 15.0, "freq {freq}");
         // Alignment: the sine is within about one output frame of the ideal one.
         let ideal = sine(1000.0, 96_000, 1, 96_000, 0.5);
-        let err = mid.iter().zip(&ideal[4000..92_000]).fold(0.0f64, |m, (a, b)| m.max((a - b).abs()));
+        let err = mid
+            .iter()
+            .zip(&ideal[4000..92_000])
+            .fold(0.0f64, |m, (a, b)| m.max((a - b).abs()));
         assert!(err < 0.045, "max err {err}");
     }
 

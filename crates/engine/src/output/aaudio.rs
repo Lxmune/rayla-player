@@ -71,7 +71,10 @@ impl Stream {
         let mut builder: *mut ffi::AAudioStreamBuilder = ptr::null_mut();
         // SAFETY: plain AAudio C calls; the builder is deleted on every path.
         unsafe {
-            check(ffi::AAudio_createStreamBuilder(&mut builder), "create stream builder")?;
+            check(
+                ffi::AAudio_createStreamBuilder(&mut builder),
+                "create stream builder",
+            )?;
             let sharing = if exclusive {
                 ffi::AAUDIO_SHARING_MODE_EXCLUSIVE
             } else {
@@ -82,15 +85,22 @@ impl Stream {
             }
             ffi::AAudioStreamBuilder_setDirection(builder, ffi::AAUDIO_DIRECTION_OUTPUT as i32);
             ffi::AAudioStreamBuilder_setSharingMode(builder, sharing as i32);
-            ffi::AAudioStreamBuilder_setPerformanceMode(builder, ffi::AAUDIO_PERFORMANCE_MODE_NONE as i32);
+            ffi::AAudioStreamBuilder_setPerformanceMode(
+                builder,
+                ffi::AAUDIO_PERFORMANCE_MODE_NONE as i32,
+            );
             ffi::AAudioStreamBuilder_setSampleRate(builder, want.rate as i32);
             ffi::AAudioStreamBuilder_setChannelCount(builder, want.channels as i32);
             ffi::AAudioStreamBuilder_setFormat(builder, sample.aaudio());
             let mut raw: *mut ffi::AAudioStream = ptr::null_mut();
-            let opened = check(ffi::AAudioStreamBuilder_openStream(builder, &mut raw), "open stream");
+            let opened = check(
+                ffi::AAudioStreamBuilder_openStream(builder, &mut raw),
+                "open stream",
+            );
             ffi::AAudioStreamBuilder_delete(builder);
             opened?;
-            let stream = Stream(NonNull::new(raw).ok_or_else(|| anyhow!("open stream: null stream"))?);
+            let stream =
+                Stream(NonNull::new(raw).ok_or_else(|| anyhow!("open stream: null stream"))?);
             if ffi::AAudioStream_getFormat(raw) != sample.aaudio() {
                 return Err(anyhow!("device refused the sample format"));
             }
@@ -170,12 +180,19 @@ impl Backend for AAudioBackend {
                 } else {
                     "Android audio".to_string()
                 };
-                check(unsafe { ffi::AAudioStream_requestStart(stream.ptr()) }, "start stream")?;
+                check(
+                    unsafe { ffi::AAudioStream_requestStart(stream.ptr()) },
+                    "start stream",
+                )?;
                 return Ok(Box::new(AAudioOutput {
                     info: OutputInfo {
                         device_name,
                         exclusive: granted_excl,
-                        format: Format { rate: rate as u32, channels: channels as u32, bits: sample.bits() },
+                        format: Format {
+                            rate: rate as u32,
+                            channels: channels as u32,
+                            bits: sample.bits(),
+                        },
                     },
                     stream,
                     sample,
@@ -236,12 +253,15 @@ impl Output for AAudioOutput {
         while done < total {
             let p = self.stream.ptr();
             // SAFETY: getter on a live stream.
-            if unsafe { ffi::AAudioStream_getState(p) } == ffi::AAUDIO_STREAM_STATE_DISCONNECTED as i32 {
+            if unsafe { ffi::AAudioStream_getState(p) }
+                == ffi::AAUDIO_STREAM_STATE_DISCONNECTED as i32
+            {
                 return Err(anyhow!("audio output disconnected"));
             }
             let buf = self.scratch[done * frame_bytes..].as_ptr().cast();
             // SAFETY: `buf` points at `total - done` whole frames in `scratch`.
-            let code = unsafe { ffi::AAudioStream_write(p, buf, (total - done) as i32, WRITE_TIMEOUT_NS) };
+            let code =
+                unsafe { ffi::AAudioStream_write(p, buf, (total - done) as i32, WRITE_TIMEOUT_NS) };
             let n = check(code, "write")? as usize;
             if n == 0 {
                 stalls += 1;
@@ -267,7 +287,14 @@ impl Output for AAudioOutput {
                     ffi::AAudioStream_requestPause(p)
                 }
             };
-            check(code, if running { "start stream" } else { "pause stream" })?;
+            check(
+                code,
+                if running {
+                    "start stream"
+                } else {
+                    "pause stream"
+                },
+            )?;
             self.running = running;
         }
         Ok(())
@@ -278,7 +305,9 @@ impl Output for AAudioOutput {
         let p = self.stream.ptr();
         for _ in 0..200 {
             // SAFETY: getters on a live stream.
-            if unsafe { ffi::AAudioStream_getFramesRead(p) >= ffi::AAudioStream_getFramesWritten(p) } {
+            if unsafe {
+                ffi::AAudioStream_getFramesRead(p) >= ffi::AAudioStream_getFramesWritten(p)
+            } {
                 break;
             }
             std::thread::sleep(Duration::from_millis(10));

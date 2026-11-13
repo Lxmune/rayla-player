@@ -61,7 +61,11 @@ impl Pipeline {
             .name("rayla-decode".into())
             .spawn(move || run(req, cache_dir, plan, s, r, c))
             .expect("spawn decode thread");
-        Pipeline { shared, ready, cancel }
+        Pipeline {
+            shared,
+            ready,
+            cancel,
+        }
     }
 
     /// Next message, waiting up to `timeout`.

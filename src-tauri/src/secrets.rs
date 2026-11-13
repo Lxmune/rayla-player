@@ -114,11 +114,16 @@ mod file {
 
     impl FileStore {
         pub fn new(data_dir: Option<PathBuf>) -> Self {
-            FileStore { path: data_dir.map(|d| d.join("secrets.json")), lock: Mutex::new(()) }
+            FileStore {
+                path: data_dir.map(|d| d.join("secrets.json")),
+                lock: Mutex::new(()),
+            }
         }
 
         fn path(&self) -> Result<&PathBuf, String> {
-            self.path.as_ref().ok_or_else(|| "app data directory unavailable".to_string())
+            self.path
+                .as_ref()
+                .ok_or_else(|| "app data directory unavailable".to_string())
         }
 
         fn load(&self) -> Result<BTreeMap<String, String>, String> {
@@ -157,7 +162,8 @@ mod file {
                 .mode(0o600)
                 .open(&tmp)
                 .map_err(err)?;
-            f.write_all(&serde_json::to_vec(&map).map_err(err)?).map_err(err)?;
+            f.write_all(&serde_json::to_vec(&map).map_err(err)?)
+                .map_err(err)?;
             f.sync_all().map_err(err)?;
             drop(f);
             std::fs::rename(&tmp, path).map_err(err)

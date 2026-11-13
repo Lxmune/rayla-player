@@ -72,7 +72,12 @@ pub fn default_backend() -> Arc<dyn Backend> {
 /// left-justified. Exact (identity) when the source has no bits below `bits`.
 #[inline]
 #[cfg_attr(
-    not(any(test, target_os = "windows", target_os = "android", target_os = "linux")),
+    not(any(
+        test,
+        target_os = "windows",
+        target_os = "android",
+        target_os = "linux"
+    )),
     allow(dead_code)
 )]
 pub fn quantize(s: i32, bits: u32) -> i32 {

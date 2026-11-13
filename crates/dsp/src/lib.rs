@@ -110,7 +110,14 @@ pub struct CompressorSettings {
 impl Default for CompressorSettings {
     /// Off, with moderate settings ready for when it is switched on.
     fn default() -> Self {
-        Self { enabled: false, threshold_db: -18.0, ratio: 3.0, attack_ms: 10.0, release_ms: 150.0, makeup_db: 0.0 }
+        Self {
+            enabled: false,
+            threshold_db: -18.0,
+            ratio: 3.0,
+            attack_ms: 10.0,
+            release_ms: 150.0,
+            makeup_db: 0.0,
+        }
     }
 }
 

@@ -58,7 +58,11 @@ impl Compressor {
         for frame in buf.chunks_exact_mut(self.channels) {
             let peak = frame.iter().fold(0.0f64, |m, s| m.max(s.abs()));
             let target = self.curve(20.0 * peak.max(1e-12).log10());
-            let c = if target < self.env_db { self.attack } else { self.release };
+            let c = if target < self.env_db {
+                self.attack
+            } else {
+                self.release
+            };
             self.env_db = c * self.env_db + (1.0 - c) * target;
             let g = db_to_linear(self.env_db + self.makeup_db);
             frame.iter_mut().for_each(|s| *s *= g);
@@ -77,7 +81,14 @@ mod tests {
     use crate::test_util::*;
 
     fn settings(threshold_db: f64, ratio: f64, makeup_db: f64) -> CompressorSettings {
-        CompressorSettings { enabled: true, threshold_db, ratio, attack_ms: 5.0, release_ms: 100.0, makeup_db }
+        CompressorSettings {
+            enabled: true,
+            threshold_db,
+            ratio,
+            attack_ms: 5.0,
+            release_ms: 100.0,
+            makeup_db,
+        }
     }
 
     fn peak_db(x: &[f64]) -> f64 {

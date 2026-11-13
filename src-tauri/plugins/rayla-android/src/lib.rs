@@ -60,7 +60,10 @@ fn native<R: Runtime>(app: &AppHandle<R>) -> Result<tauri::plugin::PluginHandle<
 }
 
 #[command]
-async fn update_now_playing<R: Runtime>(app: AppHandle<R>, info: NowPlayingInfo) -> Result<(), String> {
+async fn update_now_playing<R: Runtime>(
+    app: AppHandle<R>,
+    info: NowPlayingInfo,
+) -> Result<(), String> {
     #[cfg(target_os = "android")]
     native(&app)?
         .run_mobile_plugin_async::<()>("updateNowPlaying", serde_json::json!({ "info": info }))
@@ -123,7 +126,11 @@ async fn get_system_insets<R: Runtime>(app: AppHandle<R>) -> Result<SystemInsets
 
 /// Status / navigation bar icon colour and the window colour behind the bars.
 #[command]
-async fn set_system_bars<R: Runtime>(app: AppHandle<R>, light_background: bool, background: String) -> Result<(), String> {
+async fn set_system_bars<R: Runtime>(
+    app: AppHandle<R>,
+    light_background: bool,
+    background: String,
+) -> Result<(), String> {
     #[cfg(target_os = "android")]
     native(&app)?
         .run_mobile_plugin_async::<()>(
@@ -175,12 +182,16 @@ async fn get_network_type<R: Runtime>(app: AppHandle<R>) -> Result<NetworkInfo, 
     #[cfg(not(target_os = "android"))]
     {
         let _ = app;
-        Ok(NetworkInfo { kind: "other".into() })
+        Ok(NetworkInfo {
+            kind: "other".into(),
+        })
     }
 }
 
 #[command]
-async fn is_ignoring_battery_optimizations<R: Runtime>(app: AppHandle<R>) -> Result<BoolValue, String> {
+async fn is_ignoring_battery_optimizations<R: Runtime>(
+    app: AppHandle<R>,
+) -> Result<BoolValue, String> {
     #[cfg(target_os = "android")]
     return native(&app)?
         .run_mobile_plugin_async("isIgnoringBatteryOptimizations", ())
@@ -215,7 +226,9 @@ async fn list_storage_volumes<R: Runtime>(app: AppHandle<R>) -> Result<VolumesRe
     #[cfg(not(target_os = "android"))]
     {
         let _ = app;
-        Ok(VolumesResponse { volumes: Vec::new() })
+        Ok(VolumesResponse {
+            volumes: Vec::new(),
+        })
     }
 }
 
@@ -228,7 +241,10 @@ async fn register_listener<R: Runtime>(
 ) -> Result<(), String> {
     #[cfg(target_os = "android")]
     native(&app)?
-        .run_mobile_plugin_async::<()>("registerListener", serde_json::json!({ "event": event, "handler": handler }))
+        .run_mobile_plugin_async::<()>(
+            "registerListener",
+            serde_json::json!({ "event": event, "handler": handler }),
+        )
         .await
         .map_err(|e| e.to_string())?;
     #[cfg(not(target_os = "android"))]
@@ -237,10 +253,17 @@ async fn register_listener<R: Runtime>(
 }
 
 #[command]
-async fn remove_listener<R: Runtime>(app: AppHandle<R>, event: String, channel_id: u32) -> Result<(), String> {
+async fn remove_listener<R: Runtime>(
+    app: AppHandle<R>,
+    event: String,
+    channel_id: u32,
+) -> Result<(), String> {
     #[cfg(target_os = "android")]
     native(&app)?
-        .run_mobile_plugin_async::<()>("removeListener", serde_json::json!({ "event": event, "channelId": channel_id }))
+        .run_mobile_plugin_async::<()>(
+            "removeListener",
+            serde_json::json!({ "event": event, "channelId": channel_id }),
+        )
         .await
         .map_err(|e| e.to_string())?;
     #[cfg(not(target_os = "android"))]
@@ -267,7 +290,8 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             #[cfg(target_os = "android")]
             {
                 use tauri::Manager;
-                let handle = api.register_android_plugin(PLUGIN_IDENTIFIER, "RaylaAndroidPlugin")?;
+                let handle =
+                    api.register_android_plugin(PLUGIN_IDENTIFIER, "RaylaAndroidPlugin")?;
                 app.manage(Native(handle));
             }
             #[cfg(not(target_os = "android"))]

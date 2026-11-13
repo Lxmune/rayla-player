@@ -12,7 +12,10 @@ fn request(id: &str, url: String) -> TrackRequest {
         id: id.into(),
         entry_id: "e".into(),
         url,
-        headers: vec![HttpHeader { name: "X-Token".into(), value: "secret".into() }],
+        headers: vec![HttpHeader {
+            name: "X-Token".into(),
+            value: "secret".into(),
+        }],
         local_path: None,
         album_id: None,
         fallback_gain_db: None,
@@ -32,20 +35,31 @@ fn fetch_progress_events_end_with_a_complete_one() {
     let srv = TestServer::start(data);
     let got: Arc<Mutex<Vec<(String, u64, u64)>>> = Arc::default();
     let g = got.clone();
-    super::set_progress_hook(Arc::new(move |id, c, t| g.lock().unwrap().push((id.into(), c, t))));
+    super::set_progress_hook(Arc::new(move |id, c, t| {
+        g.lock().unwrap().push((id.into(), c, t))
+    }));
     let dir = tmp("progress");
     let t = request("prog-track", srv.url());
     let _h = fetch_fully(&dir, &t);
     // The final event is emitted just after `complete` is published.
     let deadline = std::time::Instant::now() + Duration::from_secs(5);
     loop {
-        let ev: Vec<_> = got.lock().unwrap().iter().filter(|e| e.0 == "prog-track").cloned().collect();
+        let ev: Vec<_> = got
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|e| e.0 == "prog-track")
+            .cloned()
+            .collect();
         if ev.last().is_some_and(|e| e.1 == 800_000 && e.2 == 800_000) {
             assert_eq!(ev.iter().filter(|e| e.1 == e.2).count(), 1, "{ev:?}");
             assert!(ev.windows(2).all(|w| w[0].1 <= w[1].1), "monotonic: {ev:?}");
             break;
         }
-        assert!(std::time::Instant::now() < deadline, "no complete event: {ev:?}");
+        assert!(
+            std::time::Instant::now() < deadline,
+            "no complete event: {ev:?}"
+        );
         std::thread::sleep(Duration::from_millis(5));
     }
 }

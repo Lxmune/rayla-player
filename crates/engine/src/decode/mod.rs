@@ -232,11 +232,7 @@ pub enum Decoder {
 }
 
 impl Decoder {
-    pub fn open(
-        mut src: Box<dyn MediaSource>,
-        ext: Option<&str>,
-        plan: &DsdPlan,
-    ) -> Result<Self> {
+    pub fn open(mut src: Box<dyn MediaSource>, ext: Option<&str>, plan: &DsdPlan) -> Result<Self> {
         if dsd::sniff(&mut src) {
             return Ok(Decoder::Dsd(Box::new(dsd::DsdDecoder::open(src, plan)?)));
         }

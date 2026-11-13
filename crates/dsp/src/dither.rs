@@ -86,10 +86,27 @@ mod tests {
 
     #[test]
     fn off_rounds_exactly() {
-        let x = [0.0, 1.0 / 32768.0, -1.0 / 32768.0, 0.4 / 32768.0, 0.6 / 32768.0, 0.5, -0.5];
-        assert_eq!(run(16, DitherMode::Off, 1, &x), [0, 1, -1, 0, 1, 16384, -16384]);
-        assert_eq!(run(24, DitherMode::Off, 1, &[0.5, -1.0]), [4_194_304, -8_388_608]);
-        assert_eq!(run(32, DitherMode::Off, 1, &[1.0, -1.0]), [i32::MAX, i32::MIN]);
+        let x = [
+            0.0,
+            1.0 / 32768.0,
+            -1.0 / 32768.0,
+            0.4 / 32768.0,
+            0.6 / 32768.0,
+            0.5,
+            -0.5,
+        ];
+        assert_eq!(
+            run(16, DitherMode::Off, 1, &x),
+            [0, 1, -1, 0, 1, 16384, -16384]
+        );
+        assert_eq!(
+            run(24, DitherMode::Off, 1, &[0.5, -1.0]),
+            [4_194_304, -8_388_608]
+        );
+        assert_eq!(
+            run(32, DitherMode::Off, 1, &[1.0, -1.0]),
+            [i32::MAX, i32::MIN]
+        );
     }
 
     #[test]
@@ -106,7 +123,11 @@ mod tests {
     fn tpdf_error_is_bounded_and_zero_mean() {
         let x: Vec<f64> = noise(400_000, 7).iter().map(|s| s * 0.5).collect();
         let out = run(16, DitherMode::Tpdf, 42, &x);
-        let errs: Vec<f64> = out.iter().zip(&x).map(|(q, s)| *q as f64 - s * 32768.0).collect();
+        let errs: Vec<f64> = out
+            .iter()
+            .zip(&x)
+            .map(|(q, s)| *q as f64 - s * 32768.0)
+            .collect();
         assert!(errs.iter().all(|e| e.abs() <= 1.5 + 1e-9));
         let mean = errs.iter().sum::<f64>() / errs.len() as f64;
         assert!(mean.abs() < 0.01, "mean {mean}");
@@ -116,7 +137,11 @@ mod tests {
     fn shaped_error_is_bounded_and_zero_mean() {
         let x: Vec<f64> = noise(400_000, 9).iter().map(|s| s * 0.5).collect();
         let out = run(16, DitherMode::Shaped, 42, &x);
-        let errs: Vec<f64> = out.iter().zip(&x).map(|(q, s)| *q as f64 - s * 32768.0).collect();
+        let errs: Vec<f64> = out
+            .iter()
+            .zip(&x)
+            .map(|(q, s)| *q as f64 - s * 32768.0)
+            .collect();
         assert!(errs.iter().all(|e| e.abs() <= 8.0));
         let mean = errs.iter().sum::<f64>() / errs.len() as f64;
         assert!(mean.abs() < 0.05, "mean {mean}");

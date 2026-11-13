@@ -5,8 +5,8 @@ mod cache;
 mod http;
 mod prefetch;
 
-pub use http::HttpSource;
 pub(crate) use http::agent;
+pub use http::HttpSource;
 pub use prefetch::Prefetcher;
 
 use anyhow::{Context, Result};
@@ -67,7 +67,10 @@ pub(crate) fn cache_set_limit(dir: &Path, bytes: u64) {
 }
 
 /// Ids of `tracks` whose stream-cache entry is complete on disk.
-pub(crate) fn cached_tracks(dir: &Path, tracks: &[crate::api::engine::TrackRequest]) -> Vec<String> {
+pub(crate) fn cached_tracks(
+    dir: &Path,
+    tracks: &[crate::api::engine::TrackRequest],
+) -> Vec<String> {
     tracks
         .iter()
         .filter(|t| t.local_path.is_none())

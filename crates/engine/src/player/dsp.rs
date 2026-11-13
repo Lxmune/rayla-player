@@ -69,8 +69,9 @@ fn dither_mode(m: api::DitherMode) -> d::DitherMode {
 
 /// Deterministic per-track dither seed.
 fn seed_for(id: &str) -> u64 {
-    id.bytes()
-        .fold(0xcbf2_9ce4_8422_2325u64, |h, b| (h ^ b as u64).wrapping_mul(0x100_0000_01b3))
+    id.bytes().fold(0xcbf2_9ce4_8422_2325u64, |h, b| {
+        (h ^ b as u64).wrapping_mul(0x100_0000_01b3)
+    })
 }
 
 pub struct DspStream {
@@ -105,8 +106,14 @@ impl DspStream {
             fallback_gain_db: req.fallback_gain_db,
         };
         let channels = info.channels as usize;
-        let chain = d::Chain::new(&map_config(cfg), info.sample_rate, channels, out_rate, &tags)
-            .map_err(|e| format!("cannot build DSP chain: {e}"))?;
+        let chain = d::Chain::new(
+            &map_config(cfg),
+            info.sample_rate,
+            channels,
+            out_rate,
+            &tags,
+        )
+        .map_err(|e| format!("cannot build DSP chain: {e}"))?;
         let seed = seed_for(&req.id);
         let bypass = chain.is_neutral() && cfg.dither == api::DitherMode::Off;
         Ok(DspStream {

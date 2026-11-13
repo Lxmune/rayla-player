@@ -2,7 +2,9 @@
 //! (OS keychain; app-private file on Android) and offline downloads. Command
 //! names, argument names and JSON shapes are the contract in `src/lib/ipc.ts`.
 
-use rayla_engine::api::engine::{self as api, CacheStats, DiscordActivity, DspConfig, EngineEvent, OutputDevice, TrackRequest};
+use rayla_engine::api::engine::{
+    self as api, CacheStats, DiscordActivity, DspConfig, EngineEvent, OutputDevice, TrackRequest,
+};
 use rayla_engine::downloads::{DownloadProgress, DownloadRecord, DownloadRequest, DownloadStore};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -120,7 +122,11 @@ fn secret_get(secrets: State<'_, Secrets>, key: String) -> Result<Option<String>
 }
 
 #[tauri::command]
-fn secret_set(secrets: State<'_, Secrets>, key: String, value: Option<String>) -> Result<(), String> {
+fn secret_set(
+    secrets: State<'_, Secrets>,
+    key: String,
+    value: Option<String>,
+) -> Result<(), String> {
     secrets.set(&key, value.filter(|v| !v.is_empty()))
 }
 
@@ -130,7 +136,10 @@ fn store(state: &AppState) -> Result<Arc<DownloadStore>, String> {
     state.downloads.clone().ok_or_else(|| {
         format!(
             "downloads unavailable: {}",
-            state.downloads_error.as_deref().unwrap_or("not initialised")
+            state
+                .downloads_error
+                .as_deref()
+                .unwrap_or("not initialised")
         )
     })
 }
@@ -206,7 +215,9 @@ pub fn run() {
                 .path()
                 .app_cache_dir()
                 .map_err(err)
-                .and_then(|d| api::init_engine(d.join("engine").to_string_lossy().into_owned()).map_err(err))
+                .and_then(|d| {
+                    api::init_engine(d.join("engine").to_string_lossy().into_owned()).map_err(err)
+                })
                 .err();
             let handle = app.handle().clone();
             api::set_event_handler(Box::new(move |event: EngineEvent| {

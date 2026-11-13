@@ -1,7 +1,7 @@
 //! Engine tests run against the in-memory sink; the HTTP tests use a small
 //! Range-capable server on a loopback socket.
 
-use super::engine::{Cmd, Engine, EmitFn};
+use super::engine::{Cmd, EmitFn, Engine};
 use crate::api::engine::*;
 use crate::decode::Format;
 use crate::output::sink::SinkBackend;
@@ -25,10 +25,14 @@ pub(crate) fn tmp(name: &str) -> PathBuf {
 
 /// Deterministic full-range-ish samples of `bits` depth (right-justified).
 fn noise(n: usize, bits: u32, seed: u64) -> Vec<i32> {
-    let mut x = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+    let mut x = seed
+        .wrapping_mul(6364136223846793005)
+        .wrapping_add(1442695040888963407);
     (0..n)
         .map(|_| {
-            x = x.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            x = x
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             ((x >> 33) as i64 as i32) >> (32 - bits) // arithmetic shift keeps sign
         })
         .collect()
@@ -94,7 +98,12 @@ fn rig(name: &str, speed: f64) -> Rig {
         let _ = tx.lock().unwrap().send(e);
     });
     let engine = Engine::start(dir.join("cache"), Arc::new(sink.clone()), emit);
-    Rig { engine, sink, rx, dir }
+    Rig {
+        engine,
+        sink,
+        rx,
+        dir,
+    }
 }
 
 impl Rig {
@@ -104,7 +113,10 @@ impl Rig {
         let mut seen = Vec::new();
         loop {
             let left = end.saturating_duration_since(Instant::now());
-            let e = self.rx.recv_timeout(left).unwrap_or_else(|_| panic!("timed out waiting for {what}; saw {seen:?}"));
+            let e = self
+                .rx
+                .recv_timeout(left)
+                .unwrap_or_else(|_| panic!("timed out waiting for {what}; saw {seen:?}"));
             let hit = pred(&e);
             seen.push(e);
             if hit {
@@ -113,7 +125,9 @@ impl Rig {
         }
     }
     fn until_stopped(&self) -> Vec<EngineEvent> {
-        self.until("Stopped", |e| e.kind == EventKind::StateChanged && e.state == PlaybackState::Stopped)
+        self.until("Stopped", |e| {
+            e.kind == EventKind::StateChanged && e.state == PlaybackState::Stopped
+        })
     }
     fn samples(&self) -> Vec<i32> {
         self.sink.log.lock().unwrap().samples.clone()
@@ -137,14 +151,26 @@ fn bit_perfect_case(bits: u16) {
     r.engine.send(Cmd::SetOutput(None, true)).unwrap();
     r.engine.send(Cmd::Load(local("a", &path), true)).unwrap();
     let ev = r.until_stopped();
-    assert_eq!(r.samples(), left_justified(&pcm, bits as u32), "{bits}-bit samples changed");
+    assert_eq!(
+        r.samples(),
+        left_justified(&pcm, bits as u32),
+        "{bits}-bit samples changed"
+    );
     let sp = path_of(&ev);
     assert!(sp.bit_perfect && sp.exclusive, "{sp:?}");
-    assert_eq!((sp.source_sample_rate, sp.source_bit_depth), (44100, bits as u32));
-    assert_eq!((sp.output_sample_rate, sp.output_bit_depth), (44100, bits as u32));
+    assert_eq!(
+        (sp.source_sample_rate, sp.source_bit_depth),
+        (44100, bits as u32)
+    );
+    assert_eq!(
+        (sp.output_sample_rate, sp.output_bit_depth),
+        (44100, bits as u32)
+    );
     assert_eq!(sp.codec, "PCM");
     assert!(ev.iter().any(|e| e.kind == EventKind::TrackStarted));
-    assert!(ev.iter().any(|e| e.kind == EventKind::TrackEnded && e.track_id.as_deref() == Some("a")));
+    assert!(ev
+        .iter()
+        .any(|e| e.kind == EventKind::TrackEnded && e.track_id.as_deref() == Some("a")));
 }
 
 #[test]
@@ -208,7 +234,11 @@ fn gapless_same_format_is_seamless() {
     want.extend(left_justified(&b, 16));
     assert_eq!(out.len(), a.len() + b.len(), "frames inserted or dropped");
     assert_eq!(out, want);
-    assert_eq!(r.sink.log.lock().unwrap().opens.len(), 1, "device was reopened");
+    assert_eq!(
+        r.sink.log.lock().unwrap().opens.len(),
+        1,
+        "device was reopened"
+    );
     let order: Vec<_> = ev
         .iter()
         .filter(|e| matches!(e.kind, EventKind::TrackStarted | EventKind::TrackEnded))
@@ -242,7 +272,18 @@ fn format_change_reopens_device_without_losing_samples() {
     let log = r.sink.log.lock().unwrap();
     assert_eq!(
         log.opens,
-        vec![Format { rate: 44100, channels: 2, bits: 16 }, Format { rate: 96000, channels: 2, bits: 24 }]
+        vec![
+            Format {
+                rate: 44100,
+                channels: 2,
+                bits: 16
+            },
+            Format {
+                rate: 96000,
+                channels: 2,
+                bits: 24
+            }
+        ]
     );
     assert!(log.drains >= 1);
 }
@@ -251,7 +292,9 @@ fn format_change_reopens_device_without_losing_samples() {
 
 /// Left channel counts frames modulo 20000; right is its negative.
 fn ramp(frames: usize) -> Vec<i32> {
-    (0..frames).flat_map(|f| [(f % 20000) as i32, -((f % 20000) as i32)]).collect()
+    (0..frames)
+        .flat_map(|f| [(f % 20000) as i32, -((f % 20000) as i32)])
+        .collect()
 }
 
 #[test]
@@ -266,10 +309,17 @@ fn seek_lands_on_target_with_fade_in() {
     let out = r.samples();
     let left: Vec<i32> = out.iter().step_by(2).map(|s| s >> 16).collect();
     // Skipped most of the first two seconds.
-    assert!(left.len() < frames - 80_000, "{} frames written", left.len());
+    assert!(
+        left.len() < frames - 80_000,
+        "{} frames written",
+        left.len()
+    );
     // The last discontinuity is the end of the 20 ms fade-in: 20 ms of
     // 44.1 kHz is 882 frames, so frame 88200 + 881 is the first at full gain.
-    let bad = (1..left.len()).rev().find(|&i| left[i] != left[i - 1] + 1 && left[i] != 0).unwrap();
+    let bad = (1..left.len())
+        .rev()
+        .find(|&i| left[i] != left[i - 1] + 1 && left[i] != 0)
+        .unwrap();
     assert_eq!(left[bad], ((88_200 + 881) % 20000) as i32);
     assert_eq!(*left.last().unwrap(), ((frames - 1) % 20000) as i32);
     // Frames inside the fade are attenuated, not full scale.
@@ -285,7 +335,9 @@ fn pause_stops_writing_and_resume_continues_without_loss() {
     r.engine.send(Cmd::Load(local("a", &path), true)).unwrap();
     r.until("TrackStarted", |e| e.kind == EventKind::TrackStarted);
     r.engine.send(Cmd::Pause).unwrap();
-    r.until("Paused", |e| e.kind == EventKind::StateChanged && e.state == PlaybackState::Paused);
+    r.until("Paused", |e| {
+        e.kind == EventKind::StateChanged && e.state == PlaybackState::Paused
+    });
     std::thread::sleep(Duration::from_millis(60));
     let n1 = r.samples().len();
     std::thread::sleep(Duration::from_millis(150));
@@ -293,10 +345,16 @@ fn pause_stops_writing_and_resume_continues_without_loss() {
     assert!(!r.sink.log.lock().unwrap().running);
     assert!(n1 > 0 && n1 < 2 * frames);
     r.engine.send(Cmd::Play).unwrap();
-    r.until("Playing", |e| e.kind == EventKind::StateChanged && e.state == PlaybackState::Playing);
+    r.until("Playing", |e| {
+        e.kind == EventKind::StateChanged && e.state == PlaybackState::Playing
+    });
     r.until_stopped();
     let out = r.samples();
-    assert_eq!(out.len(), 2 * frames, "frames lost or duplicated across pause");
+    assert_eq!(
+        out.len(),
+        2 * frames,
+        "frames lost or duplicated across pause"
+    );
     let left: Vec<i32> = out.iter().step_by(2).map(|s| s >> 16).collect();
     assert_eq!(*left.last().unwrap(), ((frames - 1) % 20000) as i32);
     // Pause fade-out ends in silence and resume fades in from near-silence.
@@ -332,7 +390,9 @@ fn stop_clears_track_and_reports_stopped() {
 #[test]
 fn missing_file_reports_error() {
     let r = rig("missing", 0.0);
-    r.engine.send(Cmd::Load(local("x", "/nonexistent/file.flac"), true)).unwrap();
+    r.engine
+        .send(Cmd::Load(local("x", "/nonexistent/file.flac"), true))
+        .unwrap();
     let ev = r.until("Error", |e| e.kind == EventKind::Error);
     assert_eq!(ev.last().unwrap().track_id.as_deref(), Some("x"));
     r.until_stopped();
@@ -383,7 +443,12 @@ impl TestServer {
                 }
             }
         });
-        TestServer { addr, ranges, stop, thread: Some(thread) }
+        TestServer {
+            addr,
+            ranges,
+            stop,
+            thread: Some(thread),
+        }
     }
     pub(crate) fn url(&self) -> String {
         format!("http://{}/audio", self.addr)
@@ -428,7 +493,9 @@ fn serve(
         })
     };
     if header("x-token").as_deref() != Some("secret") {
-        return sock.write_all(b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+        return sock.write_all(
+            b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+        );
     }
     let total = body.len();
     let range = header("range");
@@ -438,7 +505,9 @@ fn serve(
         l.len() == 1
     };
     if behavior == Behavior::Chunked {
-        sock.write_all(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n")?;
+        sock.write_all(
+            b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n",
+        )?;
         for c in body.chunks(16 * 1024) {
             sock.write_all(format!("{:x}\r\n", c.len()).as_bytes())?;
             sock.write_all(c)?;
@@ -449,12 +518,22 @@ fn serve(
     let (start, end) = match range.as_deref().and_then(|r| r.strip_prefix("bytes=")) {
         Some(r) => {
             let (a, b) = r.split_once('-').unwrap();
-            (a.parse::<usize>().unwrap(), b.parse::<usize>().map_or(total, |e| e + 1).min(total))
+            (
+                a.parse::<usize>().unwrap(),
+                b.parse::<usize>().map_or(total, |e| e + 1).min(total),
+            )
         }
         None => (0, total),
     };
-    let status = if range.is_some() { "206 Partial Content" } else { "200 OK" };
-    let mut resp = format!("HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n", end - start);
+    let status = if range.is_some() {
+        "206 Partial Content"
+    } else {
+        "200 OK"
+    };
+    let mut resp = format!(
+        "HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n",
+        end - start
+    );
     if range.is_some() {
         resp += &format!("Content-Range: bytes {start}-{}/{total}\r\n", end - 1);
     }
@@ -469,7 +548,9 @@ fn serve(
 }
 
 pub(crate) fn body(n: usize) -> Vec<u8> {
-    (0..n).map(|i| (i.wrapping_mul(31) ^ (i >> 8)) as u8).collect()
+    (0..n)
+        .map(|i| (i.wrapping_mul(31) ^ (i >> 8)) as u8)
+        .collect()
 }
 
 pub(crate) fn hdrs() -> Vec<(String, String)> {
@@ -507,7 +588,10 @@ fn http_sequential_read_sends_headers_and_caches() {
 fn wait_complete(s: &HttpSource) {
     let t = Instant::now();
     while !s.is_complete() {
-        assert!(t.elapsed() < Duration::from_secs(20), "download never completed");
+        assert!(
+            t.elapsed() < Duration::from_secs(20),
+            "download never completed"
+        );
         std::thread::sleep(Duration::from_millis(5));
     }
 }
@@ -567,7 +651,11 @@ fn http_resumes_from_partial_cache_fetching_only_gaps() {
     let mut all = Vec::new();
     s.read_to_end(&mut all).unwrap();
     assert_eq!(all, data);
-    assert_eq!(srv.requests(), vec!["bytes=100000-".to_string()], "only the missing tail");
+    assert_eq!(
+        srv.requests(),
+        vec!["bytes=100000-".to_string()],
+        "only the missing tail"
+    );
 }
 
 #[test]
@@ -596,7 +684,10 @@ fn http_dropped_connection_is_retried_to_correct_bytes() {
     assert_eq!(std::fs::read(cache.join("t.audio")).unwrap(), data);
     let reqs = srv.requests();
     assert_eq!(reqs.len(), 2, "{reqs:?}");
-    assert!(reqs[1].starts_with("bytes=1"), "resumes after the cached part: {reqs:?}");
+    assert!(
+        reqs[1].starts_with("bytes=1"),
+        "resumes after the cached part: {reqs:?}"
+    );
 }
 
 #[test]
@@ -622,7 +713,10 @@ fn cache_key_differs_per_url_and_keeps_the_id() {
     let b = cache_key("jf-1", "http://h/a?x=2");
     assert_ne!(a, b);
     assert_eq!(a, cache_key("jf-1", "http://h/a?x=1"));
-    assert!(a.starts_with("jf-1-") && a.len() == "jf-1-".len() + 16, "{a}");
+    assert!(
+        a.starts_with("jf-1-") && a.len() == "jf-1-".len() + 16,
+        "{a}"
+    );
 }
 
 #[test]
@@ -634,7 +728,10 @@ fn prefetch_downloads_whole_track_in_background() {
         id: "pf-1".into(),
         entry_id: "e".into(),
         url: srv.url(),
-        headers: vec![HttpHeader { name: "X-Token".into(), value: "secret".into() }],
+        headers: vec![HttpHeader {
+            name: "X-Token".into(),
+            value: "secret".into(),
+        }],
         local_path: None,
         album_id: None,
         fallback_gain_db: None,
@@ -647,7 +744,10 @@ fn prefetch_downloads_whole_track_in_background() {
     let meta = cache.join(format!("{key}.meta"));
     // The meta file is written when the entry completes.
     while !std::fs::read_to_string(&meta).is_ok_and(|m| m.contains("0 300000")) {
-        assert!(t.elapsed() < Duration::from_secs(20), "prefetch never completed");
+        assert!(
+            t.elapsed() < Duration::from_secs(20),
+            "prefetch never completed"
+        );
         std::thread::sleep(Duration::from_millis(10));
     }
     assert_eq!(std::fs::read(&file).unwrap(), data);
@@ -672,7 +772,12 @@ fn download_reports_average_throughput_on_completion() {
     let s = HttpSource::open(&srv.url(), &hdrs(), &tmp("http-tp"), "tp-track").unwrap();
     wait_complete(&s);
     let t = Instant::now();
-    while !got.lock().unwrap().iter().any(|(id, bps)| id == "tp-track" && *bps > 0) {
+    while !got
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|(id, bps)| id == "tp-track" && *bps > 0)
+    {
         assert!(t.elapsed() < Duration::from_secs(5), "no throughput event");
         std::thread::sleep(Duration::from_millis(5));
     }
@@ -707,7 +812,10 @@ fn http_fully_cached_needs_no_network() {
         assert_eq!(all, data);
     }
     srv.shutdown();
-    assert!(TcpStream::connect(srv.addr).is_err(), "server should be down");
+    assert!(
+        TcpStream::connect(srv.addr).is_err(),
+        "server should be down"
+    );
     let mut s = HttpSource::open(&url, &hdrs(), &cache, "t").unwrap();
     let mut all = Vec::new();
     s.read_to_end(&mut all).unwrap();
@@ -727,7 +835,10 @@ fn engine_plays_http_track_then_replays_offline_from_cache() {
         id: id.into(),
         entry_id: format!("e-{id}"),
         url: url.clone(),
-        headers: vec![HttpHeader { name: "X-Token".into(), value: "secret".into() }],
+        headers: vec![HttpHeader {
+            name: "X-Token".into(),
+            value: "secret".into(),
+        }],
         local_path: None,
         album_id: None,
         fallback_gain_db: None,
@@ -740,7 +851,11 @@ fn engine_plays_http_track_then_replays_offline_from_cache() {
     r.sink.log.lock().unwrap().samples.clear();
     r.engine.send(Cmd::Load(req("jf-1"), true)).unwrap();
     r.until_stopped();
-    assert_eq!(r.samples(), left_justified(&pcm, 16), "offline replay differs");
+    assert_eq!(
+        r.samples(),
+        left_justified(&pcm, 16),
+        "offline replay differs"
+    );
 }
 
 // ---- DSP integration ------------------------------------------------------------
@@ -767,7 +882,11 @@ fn replay_gain_scales_and_is_listed() {
     }
     let sp = path_of(&ev);
     assert!(!sp.bit_perfect);
-    assert!(sp.stages.iter().any(|s| s.starts_with("ReplayGain")), "{:?}", sp.stages);
+    assert!(
+        sp.stages.iter().any(|s| s.starts_with("ReplayGain")),
+        "{:?}",
+        sp.stages
+    );
 }
 
 #[test]
@@ -800,15 +919,29 @@ fn resample_to_fixed_rate_opens_device_there() {
     let ev = r.until_stopped();
     let n = r.samples().len() / 2;
     let want = frames as f64 * 96000.0 / 44100.0;
-    assert!((n as f64 - want).abs() <= 4.0, "{n} frames, expected about {want}");
+    assert!(
+        (n as f64 - want).abs() <= 4.0,
+        "{n} frames, expected about {want}"
+    );
     assert_eq!(
         r.sink.log.lock().unwrap().opens,
-        vec![Format { rate: 96000, channels: 2, bits: 16 }]
+        vec![Format {
+            rate: 96000,
+            channels: 2,
+            bits: 16
+        }]
     );
     let sp = path_of(&ev);
-    assert_eq!((sp.source_sample_rate, sp.output_sample_rate), (44100, 96000));
+    assert_eq!(
+        (sp.source_sample_rate, sp.output_sample_rate),
+        (44100, 96000)
+    );
     assert!(!sp.bit_perfect);
-    assert!(sp.stages.iter().any(|s| s.starts_with("Resample")), "{:?}", sp.stages);
+    assert!(
+        sp.stages.iter().any(|s| s.starts_with("Resample")),
+        "{:?}",
+        sp.stages
+    );
 }
 
 #[test]
@@ -846,7 +979,12 @@ fn fixed_output_rate_keeps_different_source_rates_gapless() {
     assert_eq!(started, vec!["a", "b"]);
 }
 
-fn two_tracks(r: &Rig, a_album: Option<&str>, b_album: Option<&str>, ms: u32) -> (Vec<i32>, Vec<i32>) {
+fn two_tracks(
+    r: &Rig,
+    a_album: Option<&str>,
+    b_album: Option<&str>,
+    ms: u32,
+) -> (Vec<i32>, Vec<i32>) {
     let a = noise(2 * 30_000, 16, 51);
     let b = noise(2 * 25_000, 16, 52);
     let pa = write_wav(&r.dir, "a.wav", 44100, 16, &a);
@@ -953,13 +1091,18 @@ fn entry_ids_distinguish_the_same_track_queued_twice() {
             (EventKind::TrackEnded, "e2".to_string()),
         ]
     );
-    assert!(ev.iter().filter(|e| e.kind == EventKind::Position).all(|e| e.entry_id.is_some()));
+    assert!(ev
+        .iter()
+        .filter(|e| e.kind == EventKind::Position)
+        .all(|e| e.entry_id.is_some()));
 }
 
 #[test]
 fn error_event_carries_entry_id() {
     let r = rig("entry-err", 0.0);
-    r.engine.send(Cmd::Load(local("x", "/nonexistent/file.flac"), true)).unwrap();
+    r.engine
+        .send(Cmd::Load(local("x", "/nonexistent/file.flac"), true))
+        .unwrap();
     let ev = r.until("Error", |e| e.kind == EventKind::Error);
     assert_eq!(ev.last().unwrap().entry_id.as_deref(), Some("e-x"));
 }
@@ -976,8 +1119,10 @@ fn set_dsp_while_playing_rebuilds_chain() {
     cfg.volume = 0.5;
     r.engine.send(Cmd::SetDsp(cfg)).unwrap();
     let ev = r.until_stopped();
-    assert!(ev.iter().any(|e| e.signal_path.as_ref().is_some_and(|p| !p.bit_perfect
-        && p.stages.iter().any(|s| s.starts_with("Volume")))));
+    assert!(ev.iter().any(|e| e
+        .signal_path
+        .as_ref()
+        .is_some_and(|p| !p.bit_perfect && p.stages.iter().any(|s| s.starts_with("Volume")))));
     let left: Vec<i32> = r.samples().iter().step_by(2).map(|s| s >> 16).collect();
     // The tail of the ramp is at half level.
     let last = (frames - 1) % 20000;
@@ -1000,7 +1145,11 @@ fn expected_dop(chans: &[Vec<u8>], first_marker: usize) -> Vec<i32> {
     let mut v = Vec::new();
     for i in 0..chans[0].len() / 2 {
         for c in chans {
-            v.push(dop_word([0x05, 0xFA][(i + first_marker) % 2], c[2 * i], c[2 * i + 1]));
+            v.push(dop_word(
+                [0x05, 0xFA][(i + first_marker) % 2],
+                c[2 * i],
+                c[2 * i + 1],
+            ));
         }
     }
     v
@@ -1009,7 +1158,11 @@ fn expected_dop(chans: &[Vec<u8>], first_marker: usize) -> Vec<i32> {
 fn assert_markers_alternate(out: &[i32]) {
     for (i, f) in out.chunks(2).enumerate() {
         for s in f {
-            assert_eq!((*s as u32 >> 24) as u8, [0x05, 0xFA][i % 2], "marker broken at frame {i}");
+            assert_eq!(
+                (*s as u32 >> 24) as u8,
+                [0x05, 0xFA][i % 2],
+                "marker broken at frame {i}"
+            );
         }
     }
 }
@@ -1025,11 +1178,18 @@ fn dsd_dop_is_byte_exact_and_bit_perfect() {
     assert_eq!(r.samples(), expected_dop(&chans, 0));
     assert_eq!(
         r.sink.log.lock().unwrap().opens,
-        vec![Format { rate: 176400, channels: 2, bits: 24 }]
+        vec![Format {
+            rate: 176400,
+            channels: 2,
+            bits: 24
+        }]
     );
     let sp = path_of(&ev);
     assert_eq!(sp.codec, "DSD64");
-    assert_eq!((sp.source_sample_rate, sp.source_bit_depth, sp.channels), (2_822_400, 1, 2));
+    assert_eq!(
+        (sp.source_sample_rate, sp.source_bit_depth, sp.channels),
+        (2_822_400, 1, 2)
+    );
     assert_eq!((sp.output_sample_rate, sp.output_bit_depth), (176400, 24));
     assert!(sp.exclusive && sp.bit_perfect, "{sp:?}");
     assert_eq!(sp.stages, vec!["DoP".to_string()]);
@@ -1041,7 +1201,10 @@ fn dsd_dop_gapless_keeps_marker_alternation() {
     // The second track has an odd number of DoP frames; padding keeps phase.
     let a = vec![noise_bytes(8_192, 31), noise_bytes(8_192, 32)];
     let b = vec![noise_bytes(6_002, 33), noise_bytes(6_002, 34)];
-    let (pa, pb) = (write_dsf(&r.dir, "a.dsf", &a), write_dsf(&r.dir, "b.dsf", &b));
+    let (pa, pb) = (
+        write_dsf(&r.dir, "a.dsf", &a),
+        write_dsf(&r.dir, "b.dsf", &b),
+    );
     r.engine.send(Cmd::SetOutput(None, true)).unwrap();
     r.engine.send(Cmd::Load(local("a", &pa), true)).unwrap();
     r.engine.send(Cmd::SetNext(Some(local("b", &pb)))).unwrap();
@@ -1053,7 +1216,11 @@ fn dsd_dop_gapless_keeps_marker_alternation() {
     let out = r.samples();
     assert_eq!(out, want);
     assert_markers_alternate(&out);
-    assert_eq!(r.sink.log.lock().unwrap().opens.len(), 1, "device reopened between DoP tracks");
+    assert_eq!(
+        r.sink.log.lock().unwrap().opens.len(),
+        1,
+        "device reopened between DoP tracks"
+    );
 }
 
 #[test]
@@ -1065,25 +1232,31 @@ fn dsd_dop_pause_seek_never_scale_samples() {
     r.engine.send(Cmd::Load(local("a", &path), true)).unwrap();
     r.until("TrackStarted", |e| e.kind == EventKind::TrackStarted);
     r.engine.send(Cmd::Pause).unwrap();
-    r.until("Paused", |e| e.kind == EventKind::StateChanged && e.state == PlaybackState::Paused);
+    r.until("Paused", |e| {
+        e.kind == EventKind::StateChanged && e.state == PlaybackState::Paused
+    });
     r.engine.send(Cmd::Seek(500)).unwrap();
     r.engine.send(Cmd::Play).unwrap();
     r.until_stopped();
     let out = r.samples();
     // Every written word is an unmodified DoP word: marker byte valid, low byte
     // of the 32-bit container zero, and the payload equals source data.
-    let all: std::collections::HashSet<(u8, u8)> = chans[0]
-        .chunks(2)
-        .map(|p| (p[0], p[1]))
-        .collect();
+    let all: std::collections::HashSet<(u8, u8)> =
+        chans[0].chunks(2).map(|p| (p[0], p[1])).collect();
     for f in out.chunks(2) {
         let w = f[0] as u32;
-        assert!(matches!((w >> 24) as u8, 0x05 | 0xFA), "scaled sample {w:08x}");
+        assert!(
+            matches!((w >> 24) as u8, 0x05 | 0xFA),
+            "scaled sample {w:08x}"
+        );
         assert_eq!(w & 0xFF, 0);
         assert!(all.contains(&(((w >> 16) & 0xFF) as u8, ((w >> 8) & 0xFF) as u8)));
     }
     // The seek target (500 ms = 176400 bytes = 88200 frames) is in the output.
-    let want = expected_dop(&[chans[0][176_400..].to_vec(), chans[1][176_400..].to_vec()], 0);
+    let want = expected_dop(
+        &[chans[0][176_400..].to_vec(), chans[1][176_400..].to_vec()],
+        0,
+    );
     assert_eq!(&out[out.len() - want.len()..], &want[..]);
 }
 
@@ -1101,7 +1274,11 @@ fn pcm_fallback_case(name: &str, exclusive: bool, tweak: impl Fn(&mut DspConfig)
     assert_eq!(sp.codec, "DSD64");
     assert_eq!((sp.source_sample_rate, sp.source_bit_depth), (2_822_400, 1));
     assert!(!sp.bit_perfect, "{sp:?}");
-    assert_eq!(sp.stages.first().map(String::as_str), Some("DSD\u{2192}PCM 352.8 kHz"), "{sp:?}");
+    assert_eq!(
+        sp.stages.first().map(String::as_str),
+        Some("DSD\u{2192}PCM 352.8 kHz"),
+        "{sp:?}"
+    );
     // Shared: one PCM frame per input byte at 352.8 kHz. Exclusive on the test
     // sink (max 192 kHz): the chain resamples to the nearest device rate.
     let rate = r.sink.log.lock().unwrap().opens[0].rate;
@@ -1168,5 +1345,8 @@ fn dsd_set_dsp_mid_track_reopens_as_pcm() {
     let sp = path_of(&ev);
     assert!(!sp.bit_perfect);
     assert_eq!(sp.stages[0], "DSD\u{2192}PCM 352.8 kHz");
-    assert_eq!(r.sink.log.lock().unwrap().opens.last().unwrap().rate, 192000);
+    assert_eq!(
+        r.sink.log.lock().unwrap().opens.last().unwrap().rate,
+        192000
+    );
 }

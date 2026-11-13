@@ -118,7 +118,14 @@ pub struct CompressorConfig {
 
 impl Default for CompressorConfig {
     fn default() -> Self {
-        Self { enabled: false, threshold_db: -18.0, ratio: 3.0, attack_ms: 10.0, release_ms: 150.0, makeup_db: 0.0 }
+        Self {
+            enabled: false,
+            threshold_db: -18.0,
+            ratio: 3.0,
+            attack_ms: 10.0,
+            release_ms: 150.0,
+            makeup_db: 0.0,
+        }
     }
 }
 
@@ -427,8 +434,12 @@ mod contract_tests {
         assert_eq!(t.album_id.as_deref(), Some("al"));
         assert_eq!(t.fallback_gain_db, Some(-2.5));
         let d = OutputDevice {
-            id: "i".into(), name: "n".into(), is_default: true,
-            supports_exclusive: false, sample_rates: vec![44100], max_bit_depth: 24,
+            id: "i".into(),
+            name: "n".into(),
+            is_default: true,
+            supports_exclusive: false,
+            sample_rates: vec![44100],
+            max_bit_depth: 24,
         };
         assert_eq!(
             serde_json::to_value(d).unwrap(),

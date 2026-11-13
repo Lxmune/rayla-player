@@ -421,7 +421,10 @@ struct Fail {
 }
 
 fn retry(msg: impl ToString) -> Fail {
-    Fail { fatal: false, msg: msg.to_string() }
+    Fail {
+        fatal: false,
+        msg: msg.to_string(),
+    }
 }
 
 /// The downloader thread: lives while somebody holds the entry and bytes are missing.
@@ -521,7 +524,10 @@ fn fetch(
             return Err(retry("HTTP 416 (file shrank)"));
         }
         Err(ureq::Error::Status(c, _)) if (400..500).contains(&c) && c != 408 && c != 429 => {
-            return Err(Fail { fatal: true, msg: format!("HTTP {c}") });
+            return Err(Fail {
+                fatal: true,
+                msg: format!("HTTP {c}"),
+            });
         }
         Err(err) => return Err(retry(err)),
     };
@@ -539,13 +545,17 @@ fn fetch(
         // The server ignored Range and sends the whole file from 0; chunked
         // transcodes have no Content-Length.
         200 => (
-            resp.header("Content-Length").and_then(|t| t.trim().parse::<u64>().ok()),
+            resp.header("Content-Length")
+                .and_then(|t| t.trim().parse::<u64>().ok()),
             true,
         ),
         s => return Err(retry(format!("unexpected HTTP status {s}"))),
     };
     if total == Some(0) {
-        return Err(Fail { fatal: true, msg: "empty response".into() });
+        return Err(Fail {
+            fatal: true,
+            msg: "empty response".into(),
+        });
     }
     let len = {
         let mut st = e.st.lock().unwrap();
@@ -661,7 +671,11 @@ fn store(
     e.cv.notify_all();
     dl.total_bytes += n;
     dl.win_bytes += n;
-    if complete || dl.last_progress.map_or(true, |t| t.elapsed() >= PROGRESS_EVERY) {
+    if complete
+        || dl
+            .last_progress
+            .map_or(true, |t| t.elapsed() >= PROGRESS_EVERY)
+    {
         dl.last_progress = Some(Instant::now());
         super::emit_progress(&e.track_id, cached, total);
     }
@@ -701,7 +715,9 @@ pub(crate) fn prune(dir: &Path, cap: u64) {
         .filter(|(_, w)| w.strong_count() > 0)
         .map(|(p, _)| p)
         .collect();
-    let Ok(rd) = std::fs::read_dir(dir) else { return };
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return;
+    };
     let size = |p: &Path| std::fs::metadata(p).map(|m| m.len()).unwrap_or(0);
     let mut total = 0u64;
     let mut files: Vec<(SystemTime, PathBuf, u64)> = Vec::new();
@@ -711,7 +727,9 @@ pub(crate) fn prune(dir: &Path, cap: u64) {
             Some("audio") => {
                 let m = ent.metadata().ok();
                 let sz = m.as_ref().map_or(0, |m| m.len()) + size(&p.with_extension("meta"));
-                let t = m.and_then(|m| m.modified().ok()).unwrap_or(SystemTime::UNIX_EPOCH);
+                let t = m
+                    .and_then(|m| m.modified().ok())
+                    .unwrap_or(SystemTime::UNIX_EPOCH);
                 total += sz;
                 files.push((t, p, sz));
             }
@@ -755,5 +773,9 @@ pub(crate) fn stats(dir: &Path) -> crate::api::engine::CacheStats {
             }
         }
     }
-    crate::api::engine::CacheStats { used_bytes: used, limit_bytes: limit(), entries }
+    crate::api::engine::CacheStats {
+        used_bytes: used,
+        limit_bytes: limit(),
+        entries,
+    }
 }
